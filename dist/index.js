@@ -16,6 +16,8 @@ const core = __nccwpck_require__(2186);
 const io = __nccwpck_require__(7436);
 const tools = __nccwpck_require__(7784);
 const path = __nccwpck_require__(1017);
+const fs = __nccwpck_require__(3292);
+const child_process_1 = __nccwpck_require__(2081);
 const semver_1 = __nccwpck_require__(1383);
 const shared = __nccwpck_require__(6946);
 const utils_1 = __nccwpck_require__(190);
@@ -24,7 +26,6 @@ function getArchiveFileName(version, platform, architecture, buildType) {
     fileName += "llvm-";
     fileName += version;
     fileName += "-";
-    fileName += architecture;
     switch (process.arch) {
         case "arm64":
             fileName += "arm64";
@@ -52,7 +53,7 @@ function getArchiveFileName(version, platform, architecture, buildType) {
     }
     fileName += "-";
     fileName += buildType;
-    fileName += "tar.zst";
+    fileName += ".tar.zst";
     return fileName;
 }
 function assertPresent(value) {
@@ -62,6 +63,12 @@ function assertPresent(value) {
     if (value === null) {
         throw new Error("Value is null");
     }
+}
+function nonEmpty(value) {
+    return typeof value === "string" && value.length > 0;
+}
+function trim(value) {
+    return value.trim();
 }
 class ToolsGetter {
     constructor(llvmVersion = "20.1.6", llvmBuildRelease = "20250717-163129", useCloudCache = true, useLocalCache = false, buildType = "MinSizeRel") {
@@ -135,7 +142,11 @@ class ToolsGetter {
         if (!localPath) {
             throw new Error(`Unexpectedly the directory of the tools is not defined`);
         }
-        await this.addToolsToPath(localPath, archiveFileName);
+        const llvmRootFolder = path.join(outPath, archiveFileName.replace(".tar.zst", ""));
+        core.info(`LLVM root folder: ${llvmRootFolder}`);
+        await this.addLLVMBinToPath(llvmRootFolder);
+        await this.makePkgConfig(llvmRootFolder);
+        // todo put the generation of the pkg-config within the cached entry, but add to the path after extracting the cache.
         if (this.useCloudCache && cloudCacheHitKey === undefined) {
             await core.group(`Saving to GitHub cloud cache using key '${hashedKey}'`, async () => {
                 assertPresent(outPath);
@@ -161,6 +172,82 @@ class ToolsGetter {
             });
         }
     }
+    async makePkgConfig(llvmRootFolder) {
+        await core.group(`Creating pkg-config file`, async () => {
+            const pkgConfigFolder = path.join(llvmRootFolder, "pkg-config");
+            core.info(`Creating pkg-config folder at: ${pkgConfigFolder}`);
+            await io.mkdirP(pkgConfigFolder);
+            const pkgConfigPath = path.join(pkgConfigFolder, "llvm.pc");
+            core.info(`Creating pkg-config file at: ${pkgConfigPath}`);
+            // Generate pkg-config content using llvm-config
+            const content = await this.generatePkgConfigContent(llvmRootFolder);
+            await fs.writeFile(pkgConfigPath, content);
+            core.info(`Created pkg-config file at: ${pkgConfigPath}`);
+            await this.addToPkgConfigPath(pkgConfigFolder);
+            // Display the generated content for verification
+            core.info(`${pkgConfigPath} written:`);
+            core.info(content);
+            // Verify the pkg-config file is working
+            await this.verifyPkgConfig();
+        });
+    }
+    async addToPkgConfigPath(folder) {
+        await core.group(`Adding pkg-config folder to PKG_CONFIG_PATH`, async () => {
+            core.info(`Adding '${folder}' to PKG_CONFIG_PATH`);
+            const currentPath = process.env.PKG_CONFIG_PATH || "";
+            const newPath = folder + path.delimiter + currentPath;
+            core.exportVariable("PKG_CONFIG_PATH", newPath);
+            core.info(`PKG_CONFIG_PATH is now: ${newPath}`);
+        });
+    }
+    async generatePkgConfigContent(llvmRootFolder) {
+        const utf8 = {
+            encoding: "utf8",
+        };
+        return await core.group(`Generating pkg-config content`, async () => {
+            function makePathsRelocatableAndNormalized(p) {
+                function normalizePathSeparators(p) {
+                    return p.replaceAll("\\", "/");
+                }
+                function replaceWithRelocatablePaths(p) {
+                    const normalizedLlvmRootEndingWithSep = llvmRootFolder.endsWith(path.sep)
+                        ? llvmRootFolder
+                        : llvmRootFolder + path.sep;
+                    return p.replaceAll(normalizedLlvmRootEndingWithSep, "${pcfiledir}" + path.sep + ".." + path.sep);
+                }
+                return normalizePathSeparators(replaceWithRelocatablePaths(p));
+            }
+            // Replaces one or more consecutive white-space characters with a single space and trims the string.
+            function normalizeSpaces(value) {
+                return value.replace(/\s+/g, " ").trim();
+            }
+            // Libraries
+            const absoluteLibdir = normalizeSpaces((0, child_process_1.execSync)("llvm-config --libdir", {
+                encoding: "utf8",
+            }));
+            core.info(`libdir from llvm-config: ${absoluteLibdir}`);
+            const systemLibs = normalizeSpaces((0, child_process_1.execSync)("llvm-config --system-libs --libs analysis bitwriter core native passes target", utf8));
+            core.info(`system libs from llvm-config: ${systemLibs}`);
+            const libAttributes = makePathsRelocatableAndNormalized(`-L${absoluteLibdir} ${systemLibs}`);
+            // CXX Flags
+            const cxxflagsOutput = (0, child_process_1.execSync)("llvm-config --cxxflags", utf8).trim();
+            core.info(`cxxflags from llvm-config: ${cxxflagsOutput}`);
+            const cflags = makePathsRelocatableAndNormalized(cxxflagsOutput);
+            // Generate pkg-config content
+            const content = [
+                "Name: LLVM",
+                "Description: Low-level Virtual Machine compiler framework",
+                `Version: ${this.llvmVersion}`,
+                "URL: http://www.llvm.org/",
+                `Libs: ${libAttributes}`,
+                `Cflags: ${cflags}`,
+            ].join("\n");
+            await core.group(`Generated pkg-config content`, async () => {
+                core.info(content);
+            });
+            return content;
+        });
+    }
     static matchRange(theCatalog, range) {
         core.debug(`matchRange(${theCatalog}, ${range})>>`);
         const targetArchPlat = shared.getArchitecturePlatform();
@@ -175,7 +262,7 @@ class ToolsGetter {
             return range;
         }
         catch (error) {
-            core.debug(error === null || error === void 0 ? void 0 : error.message);
+            core.debug(error?.message);
             // Try to use the range to find the version ...
             core.debug(`Collecting semvers list... `);
             const matches = [];
@@ -183,7 +270,7 @@ class ToolsGetter {
                 try {
                     matches.push(new semver_1.SemVer(release));
                 }
-                catch (_a) {
+                catch {
                     core.debug(`Skipping ${release}`);
                 }
             });
@@ -195,21 +282,18 @@ class ToolsGetter {
             return match.version;
         }
     }
-    isWindows() {
-        return process.platform === "win32";
-    }
     // Some ninja archives for macOS contain the ninja executable named after
     // the package name rather than 'ninja'.
-    async addToolsToPath(outPath, llvmArchiveFileName) {
-        await core.group(`Add CMake and Ninja to PATH`, async () => {
-            const llvmBinPath = path.join(outPath, llvmArchiveFileName.replace(".tar.zst", ""), "bin");
-            core.info(`LLVM bin folder: '${llvmBinPath}'`);
+    async addLLVMBinToPath(llvmRootFolder) {
+        await core.group(`Add LLVM's bin to PATH`, async () => {
+            const llvmBinPath = path.join(llvmRootFolder, "bin");
+            core.info("LLVM bin directory: " + llvmBinPath);
             core.addPath(llvmBinPath);
             await core.group(`Validating the installed LLVM paths`, async () => {
                 const llvmWhichPath = await io.which("llvm-config", true);
-                core.info(`LLVM actual path is: '${llvmWhichPath}'`);
+                core.info(`Actual path to llvm-config is: '${llvmWhichPath}'`);
                 const clangWhichPath = await io.which("clang", true);
-                core.info(`Clang actual path is: '${clangWhichPath}'`);
+                core.info(`Actual path to clang is: '${clangWhichPath}'`);
             });
         });
     }
@@ -239,7 +323,7 @@ class ToolsGetter {
     }
     async extract(downloaded, outputPath) {
         core.info("Extracting archive from " + downloaded);
-        await tools.extractTar(downloaded, outputPath, `--zstd`);
+        await tools.extractTar(downloaded, outputPath, [`-x`, `--zstd`]);
     }
     // Returns the path to the downloaded file.
     async downloadLLVM(archiveFileName) {
@@ -256,6 +340,37 @@ class ToolsGetter {
         // a major version number, let's ensure an unique version by switching the patch part.
         const minorPatch = hashedKey > 0 ? ".0.0" : ".0.1";
         return `${Math.abs(hashedKey)}${minorPatch}`;
+    }
+    async verifyPkgConfig() {
+        await core.group(`Verifying pkg-config setup`, async () => {
+            // Check if pkg-config can find the llvm package
+            const pkgConfigExists = (0, child_process_1.execSync)("pkg-config --exists llvm", {
+                encoding: "utf8",
+                stdio: "pipe",
+            });
+            core.info("✓ pkg-config can find the llvm package");
+            // Get the version from pkg-config
+            const pkgConfigVersion = (0, child_process_1.execSync)("pkg-config --modversion llvm", {
+                encoding: "utf8",
+            }).trim();
+            core.info(`✓ pkg-config reports LLVM version: ${pkgConfigVersion}`);
+            // Verify the version matches what we expect
+            if (pkgConfigVersion !== this.llvmVersion) {
+                const err = `pkg-config version mismatch: expected ${this.llvmVersion}, got ${pkgConfigVersion}`;
+                core.setFailed(err);
+                throw new Error(err);
+            }
+            // Get the cflags from pkg-config
+            const pkgConfigCflags = (0, child_process_1.execSync)("pkg-config --cflags llvm", {
+                encoding: "utf8",
+            }).trim();
+            core.info(`✓ pkg-config cflags: ${pkgConfigCflags}`);
+            // Get the libs from pkg-config
+            const pkgConfigLibs = (0, child_process_1.execSync)("pkg-config --libs llvm", {
+                encoding: "utf8",
+            }).trim();
+            core.info(`✓ pkg-config libs: ${pkgConfigLibs}`);
+        });
     }
 }
 exports.ToolsGetter = ToolsGetter;
@@ -280,10 +395,10 @@ async function main() {
     }
     catch (err) {
         const error = err;
-        if (error === null || error === void 0 ? void 0 : error.stack) {
+        if (error?.stack) {
             core.debug(error.stack);
         }
-        const errorAsString = (err !== null && err !== void 0 ? err : "undefined error").toString();
+        const errorAsString = (err ?? "undefined error").toString();
         core.setFailed(`get-llvm action execution failed: '${errorAsString}'`);
         process.exitCode = -1000;
         forceExit(-1000);
@@ -336,7 +451,6 @@ class ReleasesCollector {
         this.filters = filters;
     }
     track(assets) {
-        var _a, _b, _c, _d, _e;
         try {
             let releaseHit;
             for (const asset of assets) {
@@ -353,22 +467,22 @@ class ReleasesCollector {
                             };
                             if (version) {
                                 const currentVersion = { mostRecentVersion: version };
-                                (_a = this.map[version.version]) !== null && _a !== void 0 ? _a : (this.map[version.version] = {});
+                                this.map[version.version] ?? (this.map[version.version] = {});
                                 this.map[version.version][filter.platform] = release;
                                 releaseHit = true;
                                 // Track the latest releases.
                                 for (const key of ReleasesCollector.versionSelectors) {
                                     // This code makes little sense, anything better is welcome!
                                     const v = this.mostRecentReleases.get(key.releaseKey);
-                                    v !== null && v !== void 0 ? v : (this.mostRecentReleases.set(key.releaseKey, new Map()));
-                                    const latest = (_b = this.mostRecentReleases.get(key.releaseKey)) === null || _b === void 0 ? void 0 : _b.get(filter.platform);
-                                    const isCurrentVersionPrerelease = (((_d = (_c = version.prerelease) === null || _c === void 0 ? void 0 : _c.length) !== null && _d !== void 0 ? _d : 0) > 0) ? true : false;
+                                    v ?? (this.mostRecentReleases.set(key.releaseKey, new Map()));
+                                    const latest = this.mostRecentReleases.get(key.releaseKey)?.get(filter.platform);
+                                    const isCurrentVersionPrerelease = ((version.prerelease?.length ?? 0) > 0) ? true : false;
                                     if ((key.prereleaseAccepted === isCurrentVersionPrerelease) &&
                                         (!latest || (latest.mostRecentVersion && semver.compare(version, latest.mostRecentVersion) >= 0))) {
-                                        (_e = this.mostRecentReleases.get(key.releaseKey)) === null || _e === void 0 ? void 0 : _e.set(filter.platform, currentVersion);
+                                        this.mostRecentReleases.get(key.releaseKey)?.set(filter.platform, currentVersion);
                                         // Ensure existence of the instance for the given key.
                                         let v = this.map[key.releaseKey];
-                                        v !== null && v !== void 0 ? v : (v = (this.map[key.releaseKey] = {}));
+                                        v ?? (v = (this.map[key.releaseKey] = {}));
                                         v[filter.platform] = this.map[currentVersion.mostRecentVersion.version][filter.platform];
                                     }
                                 }
@@ -94506,6 +94620,14 @@ module.exports = require("events");
 
 "use strict";
 module.exports = require("fs");
+
+/***/ }),
+
+/***/ 3292:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("fs/promises");
 
 /***/ }),
 

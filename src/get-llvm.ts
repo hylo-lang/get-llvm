@@ -8,6 +8,7 @@ import * as io from "@actions/io";
 import * as tools from "@actions/tool-cache";
 import * as path from "path";
 import * as fs from "fs/promises";
+import { execSync, ExecSyncOptionsWithStringEncoding } from "child_process";
 import { SemVer, maxSatisfying } from "semver";
 import * as shared from "./releases-collector";
 import { hashCode } from "./utils";
@@ -24,7 +25,6 @@ function getArchiveFileName(
   fileName += "llvm-";
   fileName += version;
   fileName += "-";
-  fileName += architecture;
 
   switch (process.arch) {
     case "arm64":
@@ -56,7 +56,7 @@ function getArchiveFileName(
 
   fileName += "-";
   fileName += buildType;
-  fileName += "tar.zst";
+  fileName += ".tar.zst";
 
   return fileName;
 }
@@ -68,6 +68,12 @@ function assertPresent<T>(value: T | undefined | null): asserts value is T {
   if (value === null) {
     throw new Error("Value is null");
   }
+}
+function nonEmpty(value: string | undefined | null): boolean {
+  return typeof value === "string" && value.length > 0;
+}
+function trim(value: string): string {
+  return value.trim();
 }
 
 export class ToolsGetter {
@@ -182,7 +188,14 @@ export class ToolsGetter {
       throw new Error(`Unexpectedly the directory of the tools is not defined`);
     }
 
-    await this.addToolsToPath(localPath, archiveFileName);
+    const llvmRootFolder = path.join(
+      outPath,
+      archiveFileName.replace(".tar.zst", "")
+    );
+    core.info(`LLVM root folder: ${llvmRootFolder}`);
+    await this.addLLVMBinToPath(llvmRootFolder);
+    await this.makePkgConfig(llvmRootFolder);
+    // todo put the generation of the pkg-config within the cached entry, but add to the path after extracting the cache.
 
     if (this.useCloudCache && cloudCacheHitKey === undefined) {
       await core.group(
@@ -230,6 +243,125 @@ export class ToolsGetter {
     }
   }
 
+  private async makePkgConfig(llvmRootFolder: string) {
+    await core.group(`Creating pkg-config file`, async () => {
+      const pkgConfigFolder = path.join(llvmRootFolder, "pkg-config");
+      core.info(`Creating pkg-config folder at: ${pkgConfigFolder}`);
+      await io.mkdirP(pkgConfigFolder);
+
+      const pkgConfigPath = path.join(pkgConfigFolder, "llvm.pc");
+      core.info(`Creating pkg-config file at: ${pkgConfigPath}`);
+
+      // Generate pkg-config content using llvm-config
+      const content = await this.generatePkgConfigContent(llvmRootFolder);
+
+      await fs.writeFile(pkgConfigPath, content);
+      core.info(`Created pkg-config file at: ${pkgConfigPath}`);
+
+      await this.addToPkgConfigPath(pkgConfigFolder);
+
+      // Display the generated content for verification
+      core.info(`${pkgConfigPath} written:`);
+      core.info(content);
+
+      // Verify the pkg-config file is working
+      await this.verifyPkgConfig();
+    });
+  }
+
+  private async addToPkgConfigPath(folder: string): Promise<void> {
+    await core.group(
+      `Adding pkg-config folder to PKG_CONFIG_PATH`,
+      async () => {
+        core.info(`Adding '${folder}' to PKG_CONFIG_PATH`);
+        const currentPath = process.env.PKG_CONFIG_PATH || "";
+        const newPath = folder + path.delimiter + currentPath;
+        core.exportVariable("PKG_CONFIG_PATH", newPath);
+        core.info(`PKG_CONFIG_PATH is now: ${newPath}`);
+      }
+    );
+  }
+
+  private async generatePkgConfigContent(
+    llvmRootFolder: string
+  ): Promise<string> {
+    const utf8: ExecSyncOptionsWithStringEncoding = {
+      encoding: "utf8",
+    };
+
+    return await core.group(`Generating pkg-config content`, async () => {
+      function makePathsRelocatableAndNormalized(p: string) {
+        function normalizePathSeparators(p: string) {
+          return p.replaceAll("\\", "/");
+        }
+
+        function replaceWithRelocatablePaths(p: string): string {
+          const normalizedLlvmRootEndingWithSep = llvmRootFolder.endsWith(
+            path.sep
+          )
+            ? llvmRootFolder
+            : llvmRootFolder + path.sep;
+
+          return p.replaceAll(
+            normalizedLlvmRootEndingWithSep,
+            "${pcfiledir}" + path.sep + ".." + path.sep
+          );
+        }
+
+        return normalizePathSeparators(replaceWithRelocatablePaths(p));
+      }
+
+      // Replaces one or more consecutive white-space characters with a single space and trims the string.
+      function normalizeSpaces(value: string): string {
+        return value.replace(/\s+/g, " ").trim();
+      }
+
+      // Libraries
+      const absoluteLibdir = normalizeSpaces(
+        execSync("llvm-config --libdir", {
+          encoding: "utf8",
+        })
+      );
+
+      core.info(`libdir from llvm-config: ${absoluteLibdir}`);
+
+      const systemLibs = normalizeSpaces(
+        execSync(
+          "llvm-config --system-libs --libs analysis bitwriter core native passes target",
+          utf8
+        )
+      );
+
+      core.info(`system libs from llvm-config: ${systemLibs}`);
+
+      const libAttributes = makePathsRelocatableAndNormalized(
+        `-L${absoluteLibdir} ${systemLibs}`
+      );
+
+      // CXX Flags
+      const cxxflagsOutput = execSync("llvm-config --cxxflags", utf8).trim();
+      core.info(`cxxflags from llvm-config: ${cxxflagsOutput}`);
+
+      const cflags = makePathsRelocatableAndNormalized(cxxflagsOutput);
+
+      // Generate pkg-config content
+      const content = [
+        "Name: LLVM",
+        "Description: Low-level Virtual Machine compiler framework",
+        `Version: ${this.llvmVersion}`,
+        "URL: http://www.llvm.org/",
+        `Libs: ${libAttributes}`,
+        `Cflags: ${cflags}`,
+      ].join("\n");
+
+      await core.group(`Generated pkg-config content`, async () => {
+        core.info(content);
+      });
+
+      return content;
+    });
+  }
+
   private static matchRange(
     theCatalog: shared.CatalogType,
     range: string
@@ -270,33 +402,21 @@ export class ToolsGetter {
     }
   }
 
-  private isWindows(): boolean {
-    return process.platform === "win32";
-  }
-
   // Some ninja archives for macOS contain the ninja executable named after
   // the package name rather than 'ninja'.
 
-  private async addToolsToPath(
-    outPath: string,
-    llvmArchiveFileName: string
-  ): Promise<void> {
-    await core.group(`Add CMake and Ninja to PATH`, async () => {
-      const llvmBinPath = path.join(
-        outPath,
-        llvmArchiveFileName.replace(".tar.zst", ""),
-        "bin"
-      );
-
-      core.info(`LLVM bin folder: '${llvmBinPath}'`);
+  private async addLLVMBinToPath(llvmRootFolder: string): Promise<void> {
+    await core.group(`Add LLVM's bin to PATH`, async () => {
+      const llvmBinPath = path.join(llvmRootFolder, "bin");
+      core.info("LLVM bin directory: " + llvmBinPath);
       core.addPath(llvmBinPath);
 
       await core.group(`Validating the installed LLVM paths`, async () => {
         const llvmWhichPath: string = await io.which("llvm-config", true);
-        core.info(`LLVM actual path is: '${llvmWhichPath}'`);
+        core.info(`Actual path to llvm-config is: '${llvmWhichPath}'`);
 
         const clangWhichPath: string = await io.which("clang", true);
-        core.info(`Clang actual path is: '${clangWhichPath}'`);
+        core.info(`Actual path to clang is: '${clangWhichPath}'`);
       });
     });
   }
@@ -333,12 +453,9 @@ export class ToolsGetter {
     return cache.restoreCache([outPath], key.toString());
   }
 
-  private async extract(
-    downloaded: string,
-    outputPath: string
-  ) {
+  private async extract(downloaded: string, outputPath: string) {
     core.info("Extracting archive from " + downloaded);
-    await tools.extractTar(downloaded, outputPath, `--zstd`);
+    await tools.extractTar(downloaded, outputPath, [`-x`, `--zstd`]);
   }
 
   // Returns the path to the downloaded file.
@@ -363,6 +480,41 @@ export class ToolsGetter {
     // a major version number, let's ensure an unique version by switching the patch part.
     const minorPatch = hashedKey > 0 ? ".0.0" : ".0.1";
     return `${Math.abs(hashedKey)}${minorPatch}`;
+  }
+
+  private async verifyPkgConfig(): Promise<void> {
+    await core.group(`Verifying pkg-config setup`, async () => {
+      // Check if pkg-config can find the llvm package
+      const pkgConfigExists = execSync("pkg-config --exists llvm", {
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      core.info("✓ pkg-config can find the llvm package");
+
+      // Get the version from pkg-config
+      const pkgConfigVersion = execSync("pkg-config --modversion llvm", {
+        encoding: "utf8",
+      }).trim();
+      core.info(`✓ pkg-config reports LLVM version: ${pkgConfigVersion}`);
+
+      // Verify the version matches what we expect
+      if (pkgConfigVersion !== this.llvmVersion) {
+        const err = `pkg-config version mismatch: expected ${this.llvmVersion}, got ${pkgConfigVersion}`;
+        core.setFailed(err);
+        throw new Error(err);
+      }
+      // Get the cflags from pkg-config
+      const pkgConfigCflags = execSync("pkg-config --cflags llvm", {
+        encoding: "utf8",
+      }).trim();
+      core.info(`✓ pkg-config cflags: ${pkgConfigCflags}`);
+
+      // Get the libs from pkg-config
+      const pkgConfigLibs = execSync("pkg-config --libs llvm", {
+        encoding: "utf8",
+      }).trim();
+      core.info(`✓ pkg-config libs: ${pkgConfigLibs}`);
+    });
   }
 }
 
