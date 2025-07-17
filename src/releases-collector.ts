@@ -26,7 +26,15 @@ export interface PackageInfo {
   dropSuffix: string;
 }
 
+export enum BuildType {
+  Debug,
+  MinSizeRel,
+}
+
 export interface ReleaseFilter {
+  buildType: string;
+  targetTriple: string;
+
   suffix: string;
   binPath: string;
   dropSuffix: string;
@@ -48,129 +56,6 @@ export type MostRecentReleases = Map<string, Map<string, MostRecentVersion>>;
 
 export type Asset = { name: string; browser_download_url: string; tag_name: string };
 
-export class NinjaFilters {
-  private static readonly linuxArmFilters: ReleaseFilter[] = [{
-    binPath: '',
-    dropSuffix: ".tar.gz",
-    suffix: "aarch64-linux-gnu.tar.gz",
-    platform: linuxArmPlatform,
-  }];
-  private static readonly linuxFilters: ReleaseFilter[] = [{
-    binPath: '',
-    dropSuffix: ".tar.gz",
-    suffix: "x86_64-linux-gnu.tar.gz",
-    platform: linuxX64Platform,
-  }];
-  private static readonly windowsFilters: ReleaseFilter[] = [{
-    binPath: '',
-    dropSuffix: ".zip",
-    suffix: "x86_64-pc-windows-msvc.zip",
-    platform: windowsPlatform,
-  }];
-  private static readonly windowsArmFilters: ReleaseFilter[] = [{
-    binPath: '',
-    dropSuffix: ".zip",
-    suffix: "arm64-pc-windows-msvc.zip",
-    platform: windowsArmPlatform,
-  }];
-  private static readonly macosFilters: ReleaseFilter[] = [{
-    binPath: "",
-    dropSuffix: '.tar.gz',
-    suffix: "universal-apple-darwin.tar.gz",
-    platform: macosPlatform,
-  }, {
-    binPath: "",
-    dropSuffix: 'ninja-linux-aarch64.zip',
-    suffix: "ninja-linux-aarch64.zip",
-    platform: linuxArmPlatform,
-  }, {
-    binPath: "",
-    dropSuffix: 'ninja-linux.zip',
-    suffix: "ninja-linux.zip",
-    platform: linuxX64Platform,
-  }, {
-    binPath: "",
-    dropSuffix: 'ninja-win.zip',
-    suffix: "ninja-win.zip",
-    platform: windowsPlatform,
-  }, {
-    binPath: "",
-    dropSuffix: 'ninja-winarm64.zip',
-    suffix: "ninja-winarm64.zip",
-    platform: windowsArmPlatform,
-  }, {
-    binPath: "",
-    dropSuffix: 'ninja-mac.zip',
-    suffix: "ninja-mac.zip",
-    platform: macosPlatform,
-  }];
-
-  public static readonly allFilters: ReleaseFilter[] =
-    [...NinjaFilters.linuxFilters, ...NinjaFilters.macosFilters, ...NinjaFilters.windowsFilters,
-    ...NinjaFilters.linuxArmFilters, ...NinjaFilters.windowsArmFilters];
-}
-
-export class CMakeFilters {
-  private static readonly linuxArmFilters: ReleaseFilter[] = [{
-    binPath: 'bin/',
-    dropSuffix: ".tar.gz",
-    suffix: "linux-aarch64.tar.gz",
-    platform: linuxArmPlatform,
-  }];
-  private static readonly linuxFilters: ReleaseFilter[] = [{
-    binPath: 'bin/',
-    dropSuffix: ".tar.gz",
-    suffix: "linux-x86_64.tar.gz",
-    platform: linuxX64Platform,
-  }, {
-    binPath: 'bin/',
-    dropSuffix: ".tar.gz",
-    suffix: "Linux-i386.tar.gz",
-    platform: linuxX86Platform,
-  }];
-  private static readonly windowsFilters: ReleaseFilter[] = [
-    {
-      binPath: 'bin/',
-      dropSuffix: ".zip",
-      suffix: "windows-arm64.zip",
-      platform: windowsArmPlatform,
-    }, {
-      binPath: 'bin/',
-      dropSuffix: ".zip",
-      suffix: "windows-x86_64.zip",
-      platform: windowsPlatform,
-    }, {
-      binPath: 'bin/',
-      dropSuffix: ".zip",
-      suffix: "win64-x64.zip",
-      platform: windowsPlatform,
-    }, {
-      binPath: 'bin/',
-      dropSuffix: ".zip",
-      suffix: "win32-x86.zip",
-      platform: windowsPlatform,
-    }];
-  private static readonly macosFilters: ReleaseFilter[] = [{
-    binPath: "CMake.app/Contents/bin/",
-    dropSuffix: '.tar.gz',
-    suffix: "macos-universal.tar.gz",
-    platform: macosPlatform,
-  }, {
-    binPath: "CMake.app/Contents/bin/",
-    dropSuffix: '.tar.gz',
-    suffix: "Darwin-x86_64.tar.gz",
-    platform: macosPlatform,
-  }, {
-    binPath: "CMake.app/Contents/bin/",
-    dropSuffix: '.tar.gz',
-    suffix: "Darwin64-universal.tar.gz",
-    platform: macosPlatform,
-  }];
-
-  public static readonly allFilters: ReleaseFilter[] =
-    [...CMakeFilters.linuxFilters, ...CMakeFilters.macosFilters, ...CMakeFilters.windowsFilters,
-    ...CMakeFilters.linuxArmFilters];
-}
 
 export class ReleasesCollector {
   static readonly versionSelectors: VersionSelector[] = [
