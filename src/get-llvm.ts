@@ -76,6 +76,10 @@ function trim(value: string): string {
   return value.trim();
 }
 
+function normalizePathSeparators(p: string) {
+  return p.replaceAll("\\", "/");
+}
+
 export class ToolsGetter {
   private static readonly LOCAL_CACHE_NAME = "local-llvm-cache";
   private static readonly DOWNLOAD_URL_PREFIX =
@@ -194,6 +198,7 @@ export class ToolsGetter {
     );
     core.info(`LLVM root folder: ${llvmRootFolder}`);
     await this.addLLVMBinToPath(llvmRootFolder);
+    await this.addLLVMDirVariable(llvmRootFolder);
     await this.makePkgConfig(llvmRootFolder);
     // todo put the generation of the pkg-config within the cached entry, but add to the path after extracting the cache.
 
@@ -241,6 +246,13 @@ export class ToolsGetter {
         }
       );
     }
+  }
+  addLLVMDirVariable(llvmRootFolder: string) {
+    const llvmDir = normalizePathSeparators(
+      path.join(llvmRootFolder, "lib", "cmake", "llvm")
+    );
+    core.info(`Setting LLVM_DIR variable to: ${llvmDir}`);
+    core.exportVariable("LLVM_DIR", llvmDir);
   }
 
   private async makePkgConfig(llvmRootFolder: string) {
@@ -291,10 +303,6 @@ export class ToolsGetter {
 
     return await core.group(`Generating pkg-config content`, async () => {
       function makePathsRelocatableAndNormalized(p: string) {
-        function normalizePathSeparators(p: string) {
-          return p.replaceAll("\\", "/");
-        }
-
         function replaceWithRelocatablePaths(p: string): string {
           const normalizedLlvmRootEndingWithSep = llvmRootFolder.endsWith(
             path.sep
