@@ -28,7 +28,7 @@ function getArchiveFileName(
 
   switch (process.arch) {
     case "arm64":
-      fileName += "arm64";
+      fileName += platform === 'linux' ? "aarch64" : "arm64";
       break;
     case "x64":
     case "x32":
@@ -87,7 +87,7 @@ export class ToolsGetter {
 
   public constructor(
     private readonly llvmVersion: string = "20.1.6",
-    private readonly llvmBuildRelease: string = "20250717-163129",
+    private readonly llvmBuildRelease: string = "20250910-063105",
     private readonly useCloudCache: boolean = true,
     private readonly useLocalCache: boolean = false,
     private readonly buildType: BuildType = "MinSizeRel"
@@ -132,7 +132,7 @@ export class ToolsGetter {
       `Computing cache key from the downloads' URLs`,
       async () => {
         // Get an unique output directory name from the URL.
-        const cacheKey = archiveFileName;
+        const cacheKey = archiveFileName + "-" + this.llvmBuildRelease;
         hashedKey = hashCode(cacheKey);
         core.info(`Cache key: '${hashedKey}'.`);
         core.debug(`hash('${cacheKey}') === '${hashedKey}'`);
@@ -199,8 +199,11 @@ export class ToolsGetter {
     core.info(`LLVM root folder: ${llvmRootFolder}`);
     await this.addLLVMBinToPath(llvmRootFolder);
     await this.addLLVMDirVariable(llvmRootFolder);
-    await this.makePkgConfig(llvmRootFolder);
-    // todo put the generation of the pkg-config within the cached entry, but add to the path after extracting the cache.
+
+    const pkgConfigFolder = path.join(llvmRootFolder, "pkgconfig");
+    await this.addToPkgConfigPath(pkgConfigFolder);
+
+    // await this.makePkgConfig(llvmRootFolder);
 
     if (this.useCloudCache && cloudCacheHitKey === undefined) {
       await core.group(
