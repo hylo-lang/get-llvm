@@ -8,7 +8,7 @@ import * as io from "@actions/io";
 import * as tools from "@actions/tool-cache";
 import * as path from "path";
 import * as fs from "fs/promises";
-import { execSync, ExecSyncOptionsWithStringEncoding } from "child_process";
+import { exec, execSync, ExecSyncOptionsWithStringEncoding } from "child_process";
 import { SemVer, maxSatisfying } from "semver";
 import * as shared from "./releases-collector";
 import { hashCode } from "./utils";
@@ -202,6 +202,8 @@ export class ToolsGetter {
 
     const pkgConfigFolder = path.join(llvmRootFolder, "pkgconfig");
     await this.addToPkgConfigPath(pkgConfigFolder);
+    await this.verifyPkgConfig();
+    await this.verifyLlvmConfigOnPath();
 
     // await this.makePkgConfig(llvmRootFolder);
 
@@ -250,6 +252,19 @@ export class ToolsGetter {
       );
     }
   }
+  async verifyLlvmConfigOnPath() {
+    return core.group(`Verifying llvm-config is on PATH`, async () => {
+      const llvmConfigWhichPath: string = await io.which("llvm-config", true);
+      core.info(`Actual path to llvm-config is: '${llvmConfigWhichPath}'`);
+
+      const llvmConfigVersion = await execSync("llvm-config --version", {
+        encoding: "utf8",
+      });
+
+      core.info(`llvm-config version is: '${llvmConfigVersion}'`);
+    });
+  }
+
   addLLVMDirVariable(llvmRootFolder: string) {
     const llvmDir = normalizePathSeparators(
       path.join(llvmRootFolder, "lib", "cmake", "llvm")
