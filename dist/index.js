@@ -28,7 +28,7 @@ function getArchiveFileName(version, platform, architecture, buildType) {
     fileName += "-";
     switch (process.arch) {
         case "arm64":
-            fileName += "arm64";
+            fileName += platform === 'linux' ? "aarch64" : "arm64";
             break;
         case "x64":
         case "x32":
@@ -70,8 +70,11 @@ function nonEmpty(value) {
 function trim(value) {
     return value.trim();
 }
+function normalizePathSeparators(p) {
+    return p.replaceAll("\\", "/");
+}
 class ToolsGetter {
-    constructor(llvmVersion = "20.1.6", llvmBuildRelease = "20250717-163129", useCloudCache = true, useLocalCache = false, buildType = "MinSizeRel") {
+    constructor(llvmVersion = "20.1.6", llvmBuildRelease = "20250910-063105", useCloudCache = true, useLocalCache = false, buildType = "MinSizeRel") {
         this.llvmVersion = llvmVersion;
         this.llvmBuildRelease = llvmBuildRelease;
         this.useCloudCache = useCloudCache;
@@ -105,9 +108,9 @@ class ToolsGetter {
         const archiveFileName = getArchiveFileName(this.llvmVersion, process.platform, process.arch, this.buildType);
         await core.group(`Computing cache key from the downloads' URLs`, async () => {
             // Get an unique output directory name from the URL.
-            const cacheKey = archiveFileName;
+            const cacheKey = archiveFileName + "-" + this.llvmBuildRelease;
             hashedKey = (0, utils_1.hashCode)(cacheKey);
-            core.info(`Cache key: '${hashedKey}'.`);
+            core.info(`Cache key: '${cacheKey}'.`);
             core.debug(`hash('${cacheKey}') === '${hashedKey}'`);
             outPath = this.getOutputPath(hashedKey.toString());
             core.info(`Local install root: '${outPath}''.`);
@@ -145,8 +148,12 @@ class ToolsGetter {
         const llvmRootFolder = path.join(outPath, archiveFileName.replace(".tar.zst", ""));
         core.info(`LLVM root folder: ${llvmRootFolder}`);
         await this.addLLVMBinToPath(llvmRootFolder);
-        await this.makePkgConfig(llvmRootFolder);
-        // todo put the generation of the pkg-config within the cached entry, but add to the path after extracting the cache.
+        await this.addLLVMDirVariable(llvmRootFolder);
+        const pkgConfigFolder = path.join(llvmRootFolder, "pkgconfig");
+        await this.addToPkgConfigPath(pkgConfigFolder);
+        await this.verifyPkgConfig();
+        await this.verifyLlvmConfigOnPath();
+        // await this.makePkgConfig(llvmRootFolder);
         if (this.useCloudCache && cloudCacheHitKey === undefined) {
             await core.group(`Saving to GitHub cloud cache using key '${hashedKey}'`, async () => {
                 assertPresent(outPath);
@@ -171,6 +178,21 @@ class ToolsGetter {
                 core.info(`Saved '${outPath}' to the local GitHub runner cache with key '${hashedKey}'.`);
             });
         }
+    }
+    async verifyLlvmConfigOnPath() {
+        return core.group(`Verifying llvm-config is on PATH`, async () => {
+            const llvmConfigWhichPath = await io.which("llvm-config", true);
+            core.info(`Actual path to llvm-config is: '${llvmConfigWhichPath}'`);
+            const llvmConfigVersion = await (0, child_process_1.execSync)("llvm-config --version", {
+                encoding: "utf8",
+            });
+            core.info(`llvm-config version is: '${llvmConfigVersion}'`);
+        });
+    }
+    addLLVMDirVariable(llvmRootFolder) {
+        const llvmDir = normalizePathSeparators(path.join(llvmRootFolder, "lib", "cmake", "llvm"));
+        core.info(`Setting LLVM_DIR variable to: ${llvmDir}`);
+        core.exportVariable("LLVM_DIR", llvmDir);
     }
     async makePkgConfig(llvmRootFolder) {
         await core.group(`Creating pkg-config file`, async () => {
@@ -206,9 +228,6 @@ class ToolsGetter {
         };
         return await core.group(`Generating pkg-config content`, async () => {
             function makePathsRelocatableAndNormalized(p) {
-                function normalizePathSeparators(p) {
-                    return p.replaceAll("\\", "/");
-                }
                 function replaceWithRelocatablePaths(p) {
                     const normalizedLlvmRootEndingWithSep = llvmRootFolder.endsWith(path.sep)
                         ? llvmRootFolder

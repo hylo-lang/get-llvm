@@ -134,7 +134,7 @@ export class ToolsGetter {
         // Get an unique output directory name from the URL.
         const cacheKey = archiveFileName + "-" + this.llvmBuildRelease;
         hashedKey = hashCode(cacheKey);
-        core.info(`Cache key: '${hashedKey}'.`);
+        core.info(`Cache key: '${cacheKey}'.`);
         core.debug(`hash('${cacheKey}') === '${hashedKey}'`);
         outPath = this.getOutputPath(hashedKey.toString());
         core.info(`Local install root: '${outPath}''.`);
