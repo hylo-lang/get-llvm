@@ -13,52 +13,39 @@ import { SemVer, maxSatisfying } from "semver";
 import * as shared from "./releases-collector";
 import { hashCode } from "./utils";
 
-type BuildType = "MinSizeRel" | "Debug";
+type BuildConfig = "MinSizeRel" | "Debug";
 
-function getArchiveFileName(
-  version: string,
-  platform: NodeJS.Platform,
-  architecture: string,
-  buildType: BuildType
-) {
-  let fileName = "";
-  fileName += "llvm-";
-  fileName += version;
-  fileName += "-";
-
+function getArchitectureNameForLLVMArchiveName(): string {
   switch (process.arch) {
     case "arm64":
-      fileName += platform === 'linux' ? "aarch64" : "arm64";
-      break;
+      return process.platform === 'linux' ? "aarch64" : "arm64";
     case "x64":
     case "x32":
-      fileName += "x86_64";
-      break;
+      return "x86_64";
     default:
-      throw Error(`Unsupported architecture: ${process.arch}`);
+      throw new Error(`Unsupported architecture: ${process.arch}`);
   }
+}
 
-  fileName += "-";
-
-  switch (platform) {
-    case "win32":
-      fileName += "unknown-windows-msvc17";
-      break;
+function getTripleSuffixForLLVMArchiveName(): string {
+  switch (process.platform) {
     case "linux":
-      fileName += "unknown-linux-gnu";
-      break;
+      return "unknown-linux-gnu";
     case "darwin":
-      fileName += "apple-darwin24.1.0";
-      break;
+      return "apple-darwin24.1.0";
+    case "win32":
+      return "unknown-windows-msvc17";
     default:
-      throw Error(`Unsupported platform: ${platform}`);
+      throw new Error(`Unsupported platform: ${process.platform}`);
   }
-
-  fileName += "-";
-  fileName += buildType;
-  fileName += ".tar.zst";
-
-  return fileName;
+}
+function getArchiveFileName(
+  version: string,
+  architecture: string,
+  platform: string,
+  buildConfig: BuildConfig
+) {
+  return `llvm-${version}-${architecture}-${platform}-${buildConfig}.tar.zst`;
 }
 
 function assertPresent<T>(value: T | undefined | null): asserts value is T {
@@ -80,41 +67,41 @@ function normalizePathSeparators(p: string) {
   return p.replaceAll("\\", "/");
 }
 
+async function verifyDirectoryExists(dirPath: string) {
+  try {
+    await fs.access(dirPath);
+  } catch {
+    throw new Error(`Directory '${dirPath}' does not exist.`);
+  }
+}
+
 export class ToolsGetter {
   private static readonly LOCAL_CACHE_NAME = "local-llvm-cache";
   private static readonly DOWNLOAD_URL_PREFIX =
     "https://github.com/hylo-lang/llvm-build/releases/download";
 
+  private readonly llvmBuildArchitecture: string;
+  private readonly llvmBuildTripleSuffix: string;
   public constructor(
-    private readonly llvmVersion: string = "20.1.6",
-    private readonly llvmBuildRelease: string = "20250910-063105",
-    private readonly useCloudCache: boolean = true,
-    private readonly useLocalCache: boolean = false,
-    private readonly buildType: BuildType = "MinSizeRel"
+    private readonly llvmVersion: string,
+    private readonly llvmBuildRelease: string,
+    llvmBuildArchitecture: string | undefined,
+    llvmBuildTripleSuffix: string | undefined,
+    private readonly llvmBuildConfig: BuildConfig,
+    private readonly addToPath: boolean,
+    private readonly addToPkgConfigPath: boolean,
+    private readonly useCloudCache: boolean,
+    private readonly useLocalCache: boolean,
   ) {
     core.info(`llvm version: ${this.llvmVersion}`);
     core.info(`llvm build release: ${this.llvmBuildRelease}`);
     core.info(`useCloudCache: ${this.useCloudCache}`);
     core.info(`useLocalCache: ${this.useLocalCache}`);
+    this.llvmBuildArchitecture = llvmBuildArchitecture || getArchitectureNameForLLVMArchiveName();
+    this.llvmBuildTripleSuffix = llvmBuildTripleSuffix || getTripleSuffixForLLVMArchiveName();
   }
 
   public async run(): Promise<void> {
-    // const targetArchPlat = shared.getArchitecturePlatform();
-    // const cmakeVer = ToolsGetter.matchRange(catalog.cmakeCatalog, this.requestedCMakeVersion, "cmake");
-    // if (!cmakeVer)
-    //   throw Error(`Cannot match CMake version:'${this.requestedCMakeVersion}' in the catalog.`);
-    // const cmakePackages = (catalog.cmakeCatalog as shared.CatalogType)[cmakeVer];
-    // if (!cmakePackages)
-    //   throw Error(`Cannot find CMake version:'${this.requestedCMakeVersion}' in the catalog.`);
-    // const cmakePackage = cmakePackages[targetArchPlat];
-    // core.debug(`cmakePackages: ${JSON.stringify(cmakePackages)}`);
-    // if (!cmakePackage)
-    //   throw Error(`Cannot find CMake version:'${this.requestedCMakeVersion}' in the catalog for the '${targetArchPlat}' platform.`);
-
-    await this.get();
-  }
-
-  private async get(): Promise<void> {
     let hashedKey: number | undefined;
     let outPath: string | undefined;
     let cloudCacheHitKey: string | undefined = undefined;
@@ -123,9 +110,9 @@ export class ToolsGetter {
 
     const archiveFileName = getArchiveFileName(
       this.llvmVersion,
-      process.platform,
-      process.arch,
-      this.buildType
+      this.llvmBuildArchitecture,
+      this.llvmBuildTripleSuffix,
+      this.llvmBuildConfig
     );
 
     await core.group(
@@ -145,38 +132,30 @@ export class ToolsGetter {
     assertPresent(outPath);
 
     if (this.useLocalCache) {
-      await core.group(
-        `Restoring from local GitHub runner cache using key '${hashedKey}'`,
-        async () => {
-          assertPresent(hashedKey);
+      await core.group(`Restoring from local GitHub runner cache using key '${hashedKey}'`, async () => {
+        assertPresent(hashedKey);
 
-          localPath = tools.find(
-            ToolsGetter.LOCAL_CACHE_NAME,
-            ToolsGetter.convertHashToFakeSemver(hashedKey),
-            process.platform
-          );
-          // Silly tool-cache API does return an empty string in case of cache miss.
-          localCacheHit = !!localPath;
+        localPath = tools.find(
+          ToolsGetter.LOCAL_CACHE_NAME,
+          ToolsGetter.convertHashToFakeSemver(hashedKey),
+          process.platform
+        );
+        // Silly tool-cache API does return an empty string in case of cache miss.
+        localCacheHit = !!localPath;
 
-          core.info(localCacheHit ? "Local cache hit." : "Local cache miss.");
-        }
-      );
+        core.info(localCacheHit ? "Local cache hit." : "Local cache miss.");
+      });
     }
 
     if (!localCacheHit) {
       if (this.useCloudCache) {
-        await core.group(
-          `Restoring from GitHub cloud cache using key '${hashedKey}' into '${outPath}'`,
+        await core.group(`Restoring from GitHub cloud cache using key '${hashedKey}' into '${outPath}'`,
           async () => {
             assertPresent(outPath);
             assertPresent(hashedKey);
 
             cloudCacheHitKey = await this.restoreCache(outPath, hashedKey);
-            core.info(
-              cloudCacheHitKey === undefined
-                ? "Cloud cache miss."
-                : "Cloud cache hit."
-            );
+            core.info(cloudCacheHitKey === undefined ? "Cloud cache miss." : "Cloud cache hit.");
           }
         );
       }
@@ -192,18 +171,52 @@ export class ToolsGetter {
       throw new Error(`Unexpectedly the directory of the tools is not defined`);
     }
 
-    const llvmRootFolder = path.join(
+    const llvmRootFolder = normalizePathSeparators(path.join(
       outPath,
       archiveFileName.replace(".tar.zst", "")
-    );
-    core.info(`LLVM root folder: ${llvmRootFolder}`);
-    await this.addLLVMBinToPath(llvmRootFolder);
-    await this.addLLVMDirVariable(llvmRootFolder);
+    ));
+    core.setOutput("llvmRootDirectory", llvmRootFolder);
+    core.info(`LLVM root directory: ${llvmRootFolder}`);
+    await verifyDirectoryExists(llvmRootFolder);
 
-    const pkgConfigFolder = path.join(llvmRootFolder, "pkgconfig");
-    await this.addToPkgConfigPath(pkgConfigFolder);
-    await this.verifyPkgConfig();
-    await this.verifyLlvmConfigOnPath();
+    const llvmBinDirectory = normalizePathSeparators(path.join(llvmRootFolder, "bin"));
+    core.setOutput("llvmBinDirectory", llvmBinDirectory);
+    core.info(`LLVM bin directory: ${llvmBinDirectory}`);
+    await verifyDirectoryExists(llvmBinDirectory);
+    await this.verifyLLVMConfigVersionInDirectory(llvmBinDirectory);
+
+    const llvmPkgConfigDirectory = normalizePathSeparators(path.join(llvmRootFolder, "pkgconfig"));
+    core.setOutput("llvmPkgConfigDirectory", llvmPkgConfigDirectory);
+    core.info(`LLVM pkgconfig directory: ${llvmPkgConfigDirectory}`);
+    await verifyDirectoryExists(llvmPkgConfigDirectory);
+
+    const llvmLibDirectory = normalizePathSeparators(path.join(llvmRootFolder, "lib"));
+    core.setOutput("llvmLibDirectory", llvmLibDirectory);
+    core.info(`LLVM lib directory: ${llvmLibDirectory}`);
+    await verifyDirectoryExists(llvmLibDirectory);
+
+    const llvmCmakeDirectory = normalizePathSeparators(path.join(llvmLibDirectory, "cmake", "llvm"));
+    core.setOutput("llvmCmakeDirectory", llvmCmakeDirectory);
+    core.info(`LLVM cmake directory: ${llvmCmakeDirectory}`);
+    await verifyDirectoryExists(llvmCmakeDirectory);
+
+    const lldCmakeDirectory = normalizePathSeparators(path.join(llvmLibDirectory, "cmake", "lld"));
+    core.setOutput("lldCmakeDirectory", lldCmakeDirectory);
+    core.info(`LLD cmake directory: ${lldCmakeDirectory}`);
+    await verifyDirectoryExists(lldCmakeDirectory);
+
+    core.setOutput("llvmVersion", this.llvmVersion);
+    core.info(`LLVM version: ${this.llvmVersion}`);
+
+    if (this.addToPath) {
+      await this.addLLVMBinToPath(llvmRootFolder);
+      await this.verifyLlvmConfigOnPath();
+    }
+
+    if (this.addToPkgConfigPath) {
+      await this.doAddToPkgConfigPath(llvmPkgConfigDirectory);
+      await this.verifyPkgConfig();
+    }
 
     // await this.makePkgConfig(llvmRootFolder);
 
@@ -257,11 +270,25 @@ export class ToolsGetter {
       const llvmConfigWhichPath: string = await io.which("llvm-config", true);
       core.info(`Actual path to llvm-config is: '${llvmConfigWhichPath}'`);
 
-      const llvmConfigVersion = await execSync("llvm-config --version", {
-        encoding: "utf8",
-      });
+      const llvmConfigVersion = execSync("llvm-config --version", { encoding: "utf8" }).trim();
 
       core.info(`llvm-config version is: '${llvmConfigVersion}'`);
+      if (llvmConfigVersion !== this.llvmVersion) {
+        throw new Error(`llvm-config on PATH has a version mismatch: expected ${this.llvmVersion}, got ${llvmConfigVersion}`);
+      }
+    });
+  }
+
+  async verifyLLVMConfigVersionInDirectory(llvmBin: string) {
+    return core.group(`Verifying llvm-config in ${llvmBin}`, async () => {
+      const llvmConfigPath = path.join(llvmBin, "llvm-config");
+      core.info(`Actual path to llvm-config is: '${llvmConfigPath}'`);
+      
+      const llvmConfigVersion = execSync(`"${llvmConfigPath}" --version`, { encoding: "utf8" }).trim();
+      core.info(`llvm-config version is: '${llvmConfigVersion}'`);
+      if (llvmConfigVersion !== this.llvmVersion) {
+        throw new Error(`llvm-config version mismatch: expected ${this.llvmVersion}, got ${llvmConfigVersion}`);
+      }
     });
   }
 
@@ -288,7 +315,7 @@ export class ToolsGetter {
       await fs.writeFile(pkgConfigPath, content);
       core.info(`Created pkg-config file at: ${pkgConfigPath}`);
 
-      await this.addToPkgConfigPath(pkgConfigFolder);
+      await this.doAddToPkgConfigPath(pkgConfigFolder);
 
       // Display the generated content for verification
       core.info(`${pkgConfigPath} written:`);
@@ -299,7 +326,7 @@ export class ToolsGetter {
     });
   }
 
-  private async addToPkgConfigPath(folder: string): Promise<void> {
+  private async doAddToPkgConfigPath(folder: string): Promise<void> {
     await core.group(
       `Adding pkg-config folder to PKG_CONFIG_PATH`,
       async () => {
@@ -388,46 +415,6 @@ export class ToolsGetter {
     });
   }
 
-  private static matchRange(
-    theCatalog: shared.CatalogType,
-    range: string
-  ): string {
-    core.debug(`matchRange(${theCatalog}, ${range})>>`);
-    const targetArchPlat = shared.getArchitecturePlatform();
-    try {
-      const packages = theCatalog[range];
-      if (!packages)
-        throw Error(`Cannot find llvm version '${range}' in the catalog.`);
-      const aPackage = packages[targetArchPlat];
-      if (!aPackage)
-        throw Error(
-          `Cannot find 'llvm' version '${range}' in the catalog for the '${targetArchPlat}' platform.`
-        );
-      // return 'range' itself, this is the case where it is a well defined version.
-      return range;
-    } catch (error: any) {
-      core.debug(error?.message);
-      // Try to use the range to find the version ...
-      core.debug(`Collecting semvers list... `);
-      const matches: SemVer[] = [];
-      Object.keys(theCatalog).forEach((release) => {
-        try {
-          matches.push(new SemVer(release));
-        } catch {
-          core.debug(`Skipping ${release}`);
-        }
-      });
-      const match = maxSatisfying(matches, range);
-      if (!match || !match.version) {
-        throw new Error(
-          `Cannot match '${range}' with any version in the catalog for llvm.`
-        );
-      }
-      core.debug(`matchRange(${theCatalog}, ${range}, llvm)>>`);
-      return match.version;
-    }
-  }
-
   // Some ninja archives for macOS contain the ninja executable named after
   // the package name rather than 'ninja'.
 
@@ -511,34 +498,27 @@ export class ToolsGetter {
   private async verifyPkgConfig(): Promise<void> {
     await core.group(`Verifying pkg-config setup`, async () => {
       // Check if pkg-config can find the llvm package
-      const pkgConfigExists = execSync("pkg-config --exists llvm", {
-        encoding: "utf8",
-        stdio: "pipe",
-      });
+      execSync("pkg-config --exists llvm");
       core.info("✓ pkg-config can find the llvm package");
 
       // Get the version from pkg-config
-      const pkgConfigVersion = execSync("pkg-config --modversion llvm", {
-        encoding: "utf8",
-      }).trim();
+      const pkgConfigVersion = execSync("pkg-config --modversion llvm", { encoding: "utf8" }).trim();
+      if (pkgConfigVersion !== this.llvmVersion) {
+        throw new Error(`pkg-config version mismatch: expected ${this.llvmVersion}, got ${pkgConfigVersion}`);
+      }
       core.info(`✓ pkg-config reports LLVM version: ${pkgConfigVersion}`);
 
       // Verify the version matches what we expect
       if (pkgConfigVersion !== this.llvmVersion) {
         const err = `pkg-config version mismatch: expected ${this.llvmVersion}, got ${pkgConfigVersion}`;
-        core.setFailed(err);
         throw new Error(err);
       }
       // Get the cflags from pkg-config
-      const pkgConfigCflags = execSync("pkg-config --cflags llvm", {
-        encoding: "utf8",
-      }).trim();
+      const pkgConfigCflags = execSync("pkg-config --cflags llvm", { encoding: "utf8" }).trim();
       core.info(`✓ pkg-config cflags: ${pkgConfigCflags}`);
 
       // Get the libs from pkg-config
-      const pkgConfigLibs = execSync("pkg-config --libs llvm", {
-        encoding: "utf8",
-      }).trim();
+      const pkgConfigLibs = execSync("pkg-config --libs llvm", { encoding: "utf8" }).trim();
       core.info(`✓ pkg-config libs: ${pkgConfigLibs}`);
     });
   }
@@ -551,26 +531,33 @@ function forceExit(exitCode: number) {
 
   // Avoid this workaround when running mocked unit tests.
   if (process.env.JEST_WORKER_ID) return;
-
+  process.exitCode = exitCode;
   process.exit(exitCode);
 }
 
 export async function main(): Promise<void> {
   try {
-    const cmakeGetter: ToolsGetter = new ToolsGetter();
-    await cmakeGetter.run();
-    core.info("get-cmake action execution succeeded");
-    process.exitCode = 0;
+    const llvmGetter: ToolsGetter = new ToolsGetter(
+      core.getInput("llvmVersion"),
+      core.getInput("llvmBuildRelease"),
+      core.getInput("llvmBuildArchitecture") || undefined,
+      core.getInput("llvmBuildTripleSuffix") || undefined,
+      (core.getInput("llvmBuildConfig") as BuildConfig) || "MinSizeRel",
+      (core.getInput("addToPath") || "true").toLowerCase() === "true",
+      (core.getInput("addToPkgConfigPath") || "true").toLowerCase() === "true",
+      (core.getInput("useCloudCache") || "true").toLowerCase() === "true",
+      (core.getInput("useLocalCache") || "false").toLowerCase() === "true"
+    );
+    await llvmGetter.run();
+    core.info("get-llvm action execution succeeded");
     forceExit(0);
   } catch (err) {
     const error: Error = err as Error;
     if (error?.stack) {
-      core.debug(error.stack);
+      core.error(error.stack);
     }
     const errorAsString = (err ?? "undefined error").toString();
     core.setFailed(`get-llvm action execution failed: '${errorAsString}'`);
-    process.exitCode = -1000;
-
     forceExit(-1000);
   }
 }
