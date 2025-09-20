@@ -27,7 +27,7 @@ function getArchitectureNameForLLVMArchiveName(): string {
   }
 }
 
-function getCurrentPlatformForLLVMArchiveName(): string {
+function getTripleSuffixForLLVMArchiveName(): string {
   switch (process.platform) {
     case "linux":
       return "unknown-linux-gnu";
@@ -81,12 +81,12 @@ export class ToolsGetter {
     "https://github.com/hylo-lang/llvm-build/releases/download";
 
   private readonly llvmBuildArchitecture: string;
-  private readonly llvmBuildPlatform: string;
+  private readonly llvmBuildTripleSuffix: string;
   public constructor(
     private readonly llvmVersion: string,
     private readonly llvmBuildRelease: string,
     llvmBuildArchitecture: string | undefined,
-    llvmBuildPlatform: string | undefined,
+    llvmBuildTripleSuffix: string | undefined,
     private readonly llvmBuildConfig: BuildConfig,
     private readonly addToPath: boolean,
     private readonly addToPkgConfigPath: boolean,
@@ -98,7 +98,7 @@ export class ToolsGetter {
     core.info(`useCloudCache: ${this.useCloudCache}`);
     core.info(`useLocalCache: ${this.useLocalCache}`);
     this.llvmBuildArchitecture = llvmBuildArchitecture || getArchitectureNameForLLVMArchiveName();
-    this.llvmBuildPlatform = llvmBuildPlatform || getCurrentPlatformForLLVMArchiveName();
+    this.llvmBuildTripleSuffix = llvmBuildTripleSuffix || getTripleSuffixForLLVMArchiveName();
   }
 
   public async run(): Promise<void> {
@@ -111,7 +111,7 @@ export class ToolsGetter {
     const archiveFileName = getArchiveFileName(
       this.llvmVersion,
       this.llvmBuildArchitecture,
-      this.llvmBuildPlatform,
+      this.llvmBuildTripleSuffix,
       this.llvmBuildConfig
     );
 
@@ -541,7 +541,7 @@ export async function main(): Promise<void> {
       core.getInput("llvmVersion"),
       core.getInput("llvmBuildRelease"),
       core.getInput("llvmBuildArchitecture") || undefined,
-      core.getInput("llvmBuildPlatform") || undefined,
+      core.getInput("llvmBuildTripleSuffix") || undefined,
       (core.getInput("llvmBuildConfig") as BuildConfig) || "MinSizeRel",
       (core.getInput("addToPath") || "true").toLowerCase() === "true",
       (core.getInput("addToPkgConfigPath") || "true").toLowerCase() === "true",

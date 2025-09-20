@@ -30,7 +30,7 @@ function getArchitectureNameForLLVMArchiveName() {
             throw new Error(`Unsupported architecture: ${process.arch}`);
     }
 }
-function getCurrentPlatformForLLVMArchiveName() {
+function getTripleSuffixForLLVMArchiveName() {
     switch (process.platform) {
         case "linux":
             return "unknown-linux-gnu";
@@ -71,7 +71,7 @@ async function verifyDirectoryExists(dirPath) {
     }
 }
 class ToolsGetter {
-    constructor(llvmVersion, llvmBuildRelease, llvmBuildArchitecture, llvmBuildPlatform, llvmBuildConfig, addToPath, addToPkgConfigPath, useCloudCache, useLocalCache) {
+    constructor(llvmVersion, llvmBuildRelease, llvmBuildArchitecture, llvmBuildTripleSuffix, llvmBuildConfig, addToPath, addToPkgConfigPath, useCloudCache, useLocalCache) {
         this.llvmVersion = llvmVersion;
         this.llvmBuildRelease = llvmBuildRelease;
         this.llvmBuildConfig = llvmBuildConfig;
@@ -84,7 +84,7 @@ class ToolsGetter {
         core.info(`useCloudCache: ${this.useCloudCache}`);
         core.info(`useLocalCache: ${this.useLocalCache}`);
         this.llvmBuildArchitecture = llvmBuildArchitecture || getArchitectureNameForLLVMArchiveName();
-        this.llvmBuildPlatform = llvmBuildPlatform || getCurrentPlatformForLLVMArchiveName();
+        this.llvmBuildTripleSuffix = llvmBuildTripleSuffix || getTripleSuffixForLLVMArchiveName();
     }
     async run() {
         let hashedKey;
@@ -92,7 +92,7 @@ class ToolsGetter {
         let cloudCacheHitKey = undefined;
         let localCacheHit = false;
         let localPath = undefined;
-        const archiveFileName = getArchiveFileName(this.llvmVersion, this.llvmBuildArchitecture, this.llvmBuildPlatform, this.llvmBuildConfig);
+        const archiveFileName = getArchiveFileName(this.llvmVersion, this.llvmBuildArchitecture, this.llvmBuildTripleSuffix, this.llvmBuildConfig);
         await core.group(`Computing cache key from the downloads' URLs`, async () => {
             // Get an unique output directory name from the URL.
             const cacheKey = archiveFileName + "-" + this.llvmBuildRelease;
@@ -390,7 +390,7 @@ function forceExit(exitCode) {
 }
 async function main() {
     try {
-        const llvmGetter = new ToolsGetter(core.getInput("llvmVersion"), core.getInput("llvmBuildRelease"), core.getInput("llvmBuildArchitecture") || undefined, core.getInput("llvmBuildPlatform") || undefined, core.getInput("llvmBuildConfig") || "MinSizeRel", (core.getInput("addToPath") || "true").toLowerCase() === "true", (core.getInput("addToPkgConfigPath") || "true").toLowerCase() === "true", (core.getInput("useCloudCache") || "true").toLowerCase() === "true", (core.getInput("useLocalCache") || "false").toLowerCase() === "true");
+        const llvmGetter = new ToolsGetter(core.getInput("llvmVersion"), core.getInput("llvmBuildRelease"), core.getInput("llvmBuildArchitecture") || undefined, core.getInput("llvmBuildTripleSuffix") || undefined, core.getInput("llvmBuildConfig") || "MinSizeRel", (core.getInput("addToPath") || "true").toLowerCase() === "true", (core.getInput("addToPkgConfigPath") || "true").toLowerCase() === "true", (core.getInput("useCloudCache") || "true").toLowerCase() === "true", (core.getInput("useLocalCache") || "false").toLowerCase() === "true");
         await llvmGetter.run();
         core.info("get-llvm action execution succeeded");
         forceExit(0);

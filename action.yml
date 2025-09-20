@@ -21,7 +21,7 @@ inputs:
   llvmBuildArchitecture:
     required: false
     description: "LLVM build architecture. When nothing specified, the architecture of the runner is used."
-  llvmBuildPlatform:
+  llvmBuildTripleSuffix:
     required: false
     description: "The part of the archive name that indicates the operating system and the abi, e.g. 'unknown-linux-gnu', 'apple-darwin24.1.0', 'unknown-windows-msvc17'. When nothing specified, the platform of the runner is used."
   llvmBuildConfig:
