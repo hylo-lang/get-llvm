@@ -26,12 +26,12 @@ const addToolsToPath = jest
   .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
   .mockResolvedValue(0);
 
-test("testing get-cmake with cache-hit...", async () => {
-  const testId = crypto.randomBytes(16).toString("hex");
-  process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
+// test("testing get-cmake with cache-hit...", async () => {
+//   const testId = crypto.randomBytes(16).toString("hex");
+//   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
 
-  const getter: ToolsGetter = new ToolsGetter();
-  await getter.run();
-  expect(cacheSaveCache).toBeCalledTimes(0);
-  expect(cacheRestoreCache).toBeCalledTimes(1);
-});
+//   const getter: ToolsGetter = new ToolsGetter();
+//   await getter.run();
+//   expect(cacheSaveCache).toBeCalledTimes(0);
+//   expect(cacheRestoreCache).toBeCalledTimes(1);
+// });

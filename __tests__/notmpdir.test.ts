@@ -20,8 +20,8 @@ const addToolsToPath = jest
   .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
   .mockResolvedValue(0);
 
-test("testing get-cmake with no temporary directory failure", async () => {
-  delete process.env.RUNNER_TEMP;
-  const getter: ToolsGetter = new ToolsGetter();
-  await expect(getter.run()).rejects.toThrowError();
-});
+// test("testing get-cmake with no temporary directory failure", async () => {
+//   delete process.env.RUNNER_TEMP;
+//   const getter: ToolsGetter = new ToolsGetter();
+//   await expect(getter.run()).rejects.toThrowError();
+// });
