@@ -32,7 +32,7 @@ function getCurrentPlatformForLLVMArchiveName(): string {
     case "linux":
       return "unknown-linux-gnu";
     case "darwin":
-      return "apple-darwin";
+      return "apple-darwin24.1.0";
     case "win32":
       return "unknown-windows-msvc17";
     default:
