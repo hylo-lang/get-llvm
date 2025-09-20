@@ -10,12 +10,32 @@ runs:
   main: 'dist/index.js'
 
 inputs:
-  cmakeVersion:
+  llvmVersion:
     required: false
-    description: "Optional CMake version, expressed with the semantic version syntax, e.g. '~3.25.0' for the most recent 3.25.x, `ˆ3.25.0` for the most recent 3.x version, or a specific version `3.25.2'. Or `latest` or `latestrc` for the latest stable or release candidate version. If not specified the `latest` is installed."
-  ninjaVersion:
+    description: "LLVM version (fully qualified, e.g. 20.1.6). Must correspond to the version available in the llvmBuildRelease."
+    default: "20.1.6"
+  llvmBuildRelease:
     required: false
-    description: "Optional Ninja version, same syntax as `cmakeVersion` input. If not specified, `latest` is installed"
+    description: "LLVM build release tag - must correspond to the version specified in the llvmVersion."
+    default: "20250910-063105"
+  llvmBuildArchitecture:
+    required: false
+    description: "LLVM build architecture. When nothing specified, the architecture of the runner is used."
+  llvmBuildTripleSuffix:
+    required: false
+    description: "The part of the archive name that indicates the operating system and the abi, e.g. 'unknown-linux-gnu', 'apple-darwin24.1.0', 'unknown-windows-msvc17'. When nothing specified, the platform of the runner is used."
+  llvmBuildConfig:
+    required: false
+    description: "LLVM build configuration. Supported values are: Debug, MinSizeRel."
+    default: "MinSizeRel"
+  addToPath:
+    required: false
+    description: "If true, adds the LLVM bin directory to the PATH environment variable."
+    default: true
+  addToPkgConfigPath:
+    required: false
+    description: "If true, adds the pkgconfig directory with llvm.pc to the PKG_CONFIG_PATH environment variable."
+    default: true
   useCloudCache:
     required: false
     description: "Optional argument indicating whether to use the cloud based storage of the GitHub cache. Suited for the GitHub-hosted runners."
@@ -25,6 +45,21 @@ inputs:
     description: "Optional argument indicating whether to use the local cache on the GitHub runner file system. Suited for the self-hosted GitHub runners."
     default: false
 
+outputs:
+  llvmRootDirectory:
+    description: "The root directory of the installed LLVM."
+  llvmBinDirectory:
+    description: "The bin directory of the installed LLVM."
+  llvmPkgConfigDirectory:
+    description: "The pkgconfig directory containing llvm.pc of the installed LLVM."
+  llvmLibDirectory:
+    description: "The lib directory of the installed LLVM."
+  llvmCmakeDirectory:
+    description: "The cmake directory containing LLVMConfig.cmake of the installed LLVM (<LLVM>/lib/cmake/llvm)."
+  lldCmakeDirectory:
+    description: "The cmake directory containing LLDConfig.cmake of the installed LLVM (<LLVM>/lib/cmake/lld)."
+  llvmVersion:
+    description: "The version of the installed LLVM."
 branding:
   icon: 'terminal'  
   color: 'green'
