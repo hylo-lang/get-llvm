@@ -35,19 +35,15 @@ jobs:
       with:
         node-version: '20.x'
     - run: npm install
-    - run: npm run generate-catalog
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      if: inputs.generate-catalog == true
     - run: npm run test
     - uses: ./
-      name: validation test by running get-cmake
+      name: validation test by running get-llvm
     - name: CMake version check
       run: |
-        which cmake
-        cmake --version
-        CMAKE_LATEST=`cat .latest_cmake_version`
-        CMAKE_VER="$(cmake --version)"
+        which llvm-config
+        llvm-config --version
+        CMAKE_LATEST=`cat .latest_llvm_version`
+        CMAKE_VER="$(llvm-config --version)"
         if ! [[ "$CMAKE_VER" =~ .*"${CMAKE_LATEST}".* ]]; then
           echo "ASSERTION FAILED! Instead of '${CMAKE_LATEST}', found: "
           echo "$CMAKE_VER"
