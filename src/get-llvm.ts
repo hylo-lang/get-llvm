@@ -20,7 +20,6 @@ function getArchitectureNameForLLVMArchiveName(): string {
     case "arm64":
       return process.platform === 'linux' ? "aarch64" : "arm64";
     case "x64":
-    case "x32":
       return "x86_64";
     default:
       throw new Error(`Unsupported architecture: ${process.arch}`);
