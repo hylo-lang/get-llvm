@@ -3,8 +3,8 @@
 // Released under the term specified in file LICENSE.txt
 // SPDX short identifier: MIT
 
-import * as process from "process";
 import * as os from "os";
+import * as fsPromises from "fs/promises";
 import { ToolsGetter } from "../src/get-llvm";
 import * as cache from "@actions/cache";
 import * as core from "@actions/core";
@@ -24,17 +24,28 @@ const cacheRestoreCache = jest
   .spyOn(cache, "restoreCache")
   .mockImplementation(() => Promise.resolve(undefined));
 
-// Avoiding messing with PATH during test execution.
-const addToolsToPath = jest
-  .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
-  .mockResolvedValue(0);
+// Prevent actual LLVM download during cache-miss — tests cache control flow only.
+jest
+  .spyOn(ToolsGetter.prototype as any, "downloadAndExtractLLVM")
+  .mockImplementation(() => Promise.resolve());
 
-// test("testing get-cmake with cache-miss...", async () => {
-//   const testId = crypto.randomBytes(16).toString("hex");
-//   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
-//   const getter: ToolsGetter = new ToolsGetter();
-//   await getter.run();
-//   expect(cacheSaveCache).toBeCalledTimes(1);
-//   expect(cacheRestoreCache).toBeCalledTimes(1);
-//   expect(coreSetFailed).toBeCalledTimes(0);
-// });
+// Prevent actual filesystem access for non-existent paths after a mock download.
+jest.spyOn(fsPromises, "access").mockImplementation(() => Promise.resolve());
+
+// Prevent running llvm-config since no LLVM binary is present.
+jest
+  .spyOn(ToolsGetter.prototype, "verifyLLVMConfigVersionInDirectory")
+  .mockImplementation(() => Promise.resolve());
+
+test("testing get-llvm with cache-miss", async () => {
+  const testId = crypto.randomBytes(16).toString("hex");
+  process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
+  const getter: ToolsGetter = new ToolsGetter(
+    "20.1.6", "20250910-063105", undefined, undefined, "MinSizeRel",
+    false, false, true, false
+  );
+  await getter.run();
+  expect(cacheSaveCache).toBeCalledTimes(1);
+  expect(cacheRestoreCache).toBeCalledTimes(1);
+  expect(coreSetFailed).toBeCalledTimes(0);
+});

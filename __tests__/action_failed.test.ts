@@ -8,7 +8,6 @@ import * as toolcache from "@actions/tool-cache";
 import * as core from "@actions/core";
 import * as getcmake from "../src/get-llvm";
 import path = require("path");
-import { ToolsGetter } from "../src/get-llvm";
 import * as crypto from "crypto";
 
 // 10 minutes
@@ -28,25 +27,20 @@ jest
     }
   );
 
-// Avoiding messing with PATH during test execution.
-const addToolsToPath = jest
-  .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
-  .mockResolvedValue(0);
-
 // Avoid any side effect of core.setFailed and core.error, they may fail the workflow, but this test is suppposed
 // to fail, but workflow step (i.e. in this case `npm run test`) should not fail.
 var coreSetFailed = jest.spyOn(core, "setFailed").mockImplementation(() => {});
 var coreError = jest.spyOn(core, "error").mockImplementation(() => {});
 var toolsCacheDir = jest.spyOn(toolcache, "cacheDir");
 
-test("testing get-cmake action failure", async () => {
+test("testing get-llvm action failure", async () => {
   const testId = crypto.randomBytes(16).toString("hex");
   process.exitCode;
   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
   process.env.RUNNER_TOOL_CACHE = path.join(os.tmpdir(), `${testId}-cache`);
   await getcmake.main();
   expect(coreSetFailed).toBeCalledTimes(1);
-  expect(coreError).toBeCalledTimes(0);
+  expect(coreError).toBeCalledTimes(1);
   expect(toolsCacheDir).toBeCalledTimes(0);
 
   jest.clearAllMocks();

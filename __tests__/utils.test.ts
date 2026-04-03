@@ -5,29 +5,20 @@
 
 import { hashCode } from '../src/utils';
 
-// test('testing hashcode returns unique values...', async () => {
-//     var m: Map<number, string> = new Map<number, string>();
-//     for (const i of getAllUniqueUrls(catalog.ninjaCatalog)) {
-//         const n = hashCode(i);
-//         expect(m.has(n)).toBeFalsy();
-//         m.set(n, i);
-//     }
-//     for (const i in getAllUniqueUrls(catalog.cmakeCatalog)) {
-//         const n = hashCode(i);
-//         expect(m.has(n)).toBeFalsy();
-//         m.set(n, i);
-//     }
-// });
+test('hashCode returns 0 for empty string', () => {
+    expect(hashCode('')).toBe(0);
+});
 
-function getAllUniqueUrls(catalog: any): string[] {
-    let urls: string[] = [];
-    for (let version in catalog) {
-        // 'latest' and 'latestrc' have URLs identical to the existing versions.
-        if (version === 'latest' || version === 'latestrc')
-            continue;
-        for (let platform in catalog[version]) {
-            urls.push(catalog[version][platform].url);
-        }
-    }
-    return urls;
-}
+test('hashCode returns a non-zero value for non-empty string', () => {
+    expect(hashCode('hello')).not.toBe(0);
+});
+
+test('hashCode is deterministic', () => {
+    expect(hashCode('some text')).toBe(hashCode('some text'));
+});
+
+test('hashCode returns different values for different inputs', () => {
+    const inputs = ['abc', 'def', 'ghi', 'xyz', '123', 'test'];
+    const hashes = new Set(inputs.map(hashCode));
+    expect(hashes.size).toBe(inputs.length);
+});
