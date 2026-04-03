@@ -3,6 +3,8 @@
 // SPDX short identifier: MIT
 
 import * as os from "os";
+import * as fssync from "fs";
+import * as fsPromises from "fs/promises";
 import * as crypto from "crypto";
 import * as toolcache from "@actions/tool-cache";
 import * as core from "@actions/core";
@@ -17,58 +19,68 @@ const cloudCacheInput = "__TEST__USE_CLOUD_CACHE";
 const localCacheHit = "__TEST__LOCAL_CACHE_HIT";
 const cloudCacheHit = "__TEST__CLOUD_CACHE_HIT";
 
-let restoreCache = jest.spyOn(ToolsGetter.prototype as any, "restoreCache");
-let saveCache = jest.spyOn(ToolsGetter.prototype as any, "saveCache");
+let restoreCache = jest
+  .spyOn(ToolsGetter.prototype as any, "restoreCache")
+  .mockResolvedValue(undefined);
+let saveCache = jest
+  .spyOn(ToolsGetter.prototype as any, "saveCache")
+  .mockResolvedValue(0);
 
 jest
   .spyOn(core, "getInput")
   .mockImplementation(
     (arg: string, options: core.InputOptions | undefined): string => {
-      if (arg === "cmakeVersion")
-        return process.env["CUSTOM_CMAKE_VERSION"] || "";
-      else return "";
+      if (arg === "llvmVersion")
+        return process.env["CUSTOM_LLVM_VERSION"] || "20.1.6";
+      if (arg === "llvmBuildRelease")
+        return "20250910-063105";
+      if (arg === "addToPath")
+        return "false";
+      if (arg === "addToPkgConfigPath")
+        return "false";
+      if (arg === "useLocalCache")
+        return process.env[localCacheInput] || "false";
+      if (arg === "useCloudCache")
+        return process.env[cloudCacheInput] || "false";
+      return "";
     }
   );
 
+// Prevent actual filesystem access for non-existent paths.
+jest.spyOn(fsPromises, "access").mockImplementation(() => Promise.resolve());
+
+// Prevent running llvm-config since no LLVM binary is present by default.
 jest
-  .spyOn(core, "getBooleanInput")
-  .mockImplementation(
-    (arg: string, options: core.InputOptions | undefined): boolean => {
-      switch (arg) {
-        case "useLocalCache":
-          return process.env[localCacheInput] === "true";
-        case "useCloudCache":
-          return process.env[cloudCacheInput] === "true";
-        default:
-          return false;
-      }
-    }
-  );
+  .spyOn(ToolsGetter.prototype, "verifyLLVMConfigVersionInDirectory")
+  .mockImplementation(() => Promise.resolve());
 
-// Avoiding messing with PATH during test execution.
-const addToolsToPath = jest
-  .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
-  .mockResolvedValue(0);
+// Prevent actual LLVM downloads by default; tests 1 & 2 verify cache control flow only.
+// Test 3 overrides this mock to create fake directories for real local-cache store/restore.
+jest
+  .spyOn(ToolsGetter.prototype as any, "downloadAndExtractLLVM")
+  .mockImplementation(() => Promise.resolve());
 
 var coreSetFailed = jest.spyOn(core, "setFailed");
 var coreError = jest.spyOn(core, "error");
-var toolsCacheDir = jest.spyOn(toolcache, "cacheDir");
-var toolsFind = jest.spyOn(toolcache, "find");
+var toolsCacheDir = jest
+  .spyOn(toolcache, "cacheDir")
+  .mockResolvedValue("mock-cache-dir");
+var toolsFind = jest.spyOn(toolcache, "find").mockReturnValue("");
 
-test("testing get-cmake action success with cloud/local cache enabled", async () => {
+test("testing get-llvm action success with cloud/local cache enabled", async () => {
   const testId = crypto.randomBytes(16).toString("hex");
   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
   process.env.RUNNER_TOOL_CACHE = path.join(os.tmpdir(), `${testId}-cache`);
 
   for (var matrix of [
-    { version: "latest", cloudCache: "true", localCache: "true" },
-    { version: "latest", cloudCache: "true", localCache: "false" },
-    { version: "latest", cloudCache: "false", localCache: "true" },
-    { version: "latest", cloudCache: "false", localCache: "false" },
+    { version: "20.1.6", cloudCache: "true", localCache: "true" },
+    { version: "20.1.6", cloudCache: "true", localCache: "false" },
+    { version: "20.1.6", cloudCache: "false", localCache: "true" },
+    { version: "20.1.6", cloudCache: "false", localCache: "false" },
   ]) {
     console.log(`\n\ntesting for: ${JSON.stringify(matrix)}:\n`);
 
-    process.env["CUSTOM_CMAKE_VERSION"] = matrix.version;
+    process.env["CUSTOM_LLVM_VERSION"] = matrix.version;
     process.env[localCacheInput] = matrix.localCache;
     process.env[cloudCacheInput] = matrix.cloudCache;
     await main();
@@ -87,35 +99,35 @@ test("testing get-cmake action success with cloud/local cache enabled", async ()
   }
 });
 
-test("testing get-cmake action success with local or cloud cache hits", async () => {
+test("testing get-llvm action success with local or cloud cache hits", async () => {
   const testId = crypto.randomBytes(16).toString("hex");
   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
   process.env.RUNNER_TOOL_CACHE = path.join(os.tmpdir(), `${testId}-cache`);
 
   for (var matrix of [
     {
-      version: "latest",
+      version: "20.1.6",
       cloudCache: true,
       localCache: true,
       localHit: false,
       cloudHit: true,
     },
     {
-      version: "latest",
+      version: "20.1.6",
       cloudCache: false,
       localCache: true,
       localHit: false,
       cloudHit: false,
     },
     {
-      version: "latest",
+      version: "20.1.6",
       cloudCache: true,
       localCache: true,
       localHit: true,
       cloudHit: false,
     },
     {
-      version: "latest",
+      version: "20.1.6",
       cloudCache: false,
       localCache: true,
       localHit: true,
@@ -125,7 +137,7 @@ test("testing get-cmake action success with local or cloud cache hits", async ()
     saveCache.mockReset().mockResolvedValue(0);
     restoreCache.mockReset().mockImplementation(async () => {
       return Promise.resolve(
-        process.env[cloudCacheHit] === "true" ? "hit" : ""
+        process.env[cloudCacheHit] === "true" ? "hit" : undefined
       );
     });
     toolsCacheDir.mockReset().mockResolvedValue("mock");
@@ -142,7 +154,7 @@ test("testing get-cmake action success with local or cloud cache hits", async ()
       );
 
     console.log(`\n\ntesting for: ${JSON.stringify(matrix)}:\n`);
-    process.env["CUSTOM_CMAKE_VERSION"] = matrix.version;
+    process.env["CUSTOM_LLVM_VERSION"] = matrix.version;
     process.env[localCacheInput] = String(matrix.localCache);
     process.env[cloudCacheInput] = String(matrix.cloudCache);
     process.env[localCacheHit] = String(matrix.localHit);
@@ -165,25 +177,52 @@ test("testing get-cmake action success with local or cloud cache hits", async ()
   }
 });
 
-test("testing get-cmake action store and restore local cache", async () => {
+test("testing get-llvm action store and restore local cache", async () => {
   toolsCacheDir.mockRestore();
   toolsFind.mockRestore();
 
   const testId = crypto.randomBytes(16).toString("hex");
   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
   process.env.RUNNER_TOOL_CACHE = path.join(os.tmpdir(), `${testId}-cache`);
-  let downloadMock = undefined;
+  process.env[cloudCacheInput] = "false";
+  process.env[localCacheInput] = "true";
+  process.env["CUSTOM_LLVM_VERSION"] = "20.1.6";
+
+  // Override the download mock to create a realistic fake directory tree so that
+  // toolcache.cacheDir (which actually copies the directory) has something to work with.
+  const downloadMockImpl = jest
+    .spyOn(ToolsGetter.prototype as any, "downloadAndExtractLLVM")
+    .mockImplementation(
+      async (_archiveFileName: any, _outputPath: any) => {
+        const fakeRoot = path.join(
+          _outputPath,
+          _archiveFileName.replace(".tar.zst", "")
+        );
+        fssync.mkdirSync(path.join(fakeRoot, "bin"), { recursive: true });
+        fssync.mkdirSync(
+          path.join(fakeRoot, "lib", "cmake", "llvm"),
+          { recursive: true }
+        );
+        fssync.mkdirSync(
+          path.join(fakeRoot, "lib", "cmake", "lld"),
+          { recursive: true }
+        );
+        fssync.mkdirSync(path.join(fakeRoot, "pkgconfig"), { recursive: true });
+      }
+    );
+
+  let downloadCallCount = 0;
 
   for (var matrix of [
     {
-      version: "latest",
+      version: "20.1.6",
       cloudCache: false,
       localCache: true,
       localHit: false,
       cloudHit: false,
     },
     {
-      version: "latest",
+      version: "20.1.6",
       cloudCache: false,
       localCache: true,
       localHit: true,
@@ -191,20 +230,13 @@ test("testing get-cmake action store and restore local cache", async () => {
     },
   ]) {
     console.log(`\n\ntesting for: ${JSON.stringify(matrix)}:\n`);
-    process.env["CUSTOM_CMAKE_VERSION"] = matrix.version;
-    process.env[localCacheInput] = String(matrix.localCache);
-    process.env[cloudCacheInput] = String(matrix.cloudCache);
     await main();
     expect(coreSetFailed).toBeCalledTimes(0);
     expect(coreError).toBeCalledTimes(0);
     expect(saveCache).toBeCalledTimes(0);
     expect(restoreCache).toBeCalledTimes(0);
-    // After cache has been stored once (in the first iteration), it must be fetched from the cache and not downloaded anymore.
-    if (downloadMock) {
-      expect(downloadMock).toBeCalledTimes(0);
-    }
-
-    // Second iteration, check that the download function is not called because the local cache hits.
-    downloadMock = jest.spyOn(ToolsGetter.prototype as any, "downloadTools");
+    // The download should happen once (first iteration) and not again (local cache hit).
+    downloadCallCount += matrix.localHit ? 0 : 1;
+    expect(downloadMockImpl).toBeCalledTimes(downloadCallCount);
   }
 });

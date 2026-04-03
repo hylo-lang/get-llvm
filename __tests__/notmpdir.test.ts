@@ -15,13 +15,11 @@ jest.spyOn(cache, "restoreCache").mockImplementation(() => {
   throw new Error();
 });
 
-// Avoiding messing with PATH during test execution.
-const addToolsToPath = jest
-  .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
-  .mockResolvedValue(0);
-
-// test("testing get-cmake with no temporary directory failure", async () => {
-//   delete process.env.RUNNER_TEMP;
-//   const getter: ToolsGetter = new ToolsGetter();
-//   await expect(getter.run()).rejects.toThrowError();
-// });
+test("testing get-llvm with no temporary directory failure", async () => {
+  delete process.env.RUNNER_TEMP;
+  const getter: ToolsGetter = new ToolsGetter(
+    "20.1.6", "20250910-063105", undefined, undefined, "MinSizeRel",
+    false, false, false, false
+  );
+  await expect(getter.run()).rejects.toThrowError();
+});

@@ -3,7 +3,6 @@
 // Released under the term specified in file LICENSE.txt
 // SPDX short identifier: MIT
 
-import * as process from "process";
 import * as os from "os";
 import { ToolsGetter } from "../src/get-llvm";
 import * as cache from "@actions/cache";
@@ -19,15 +18,12 @@ jest.spyOn(cache, "restoreCache").mockImplementation(() => {
   throw new Error();
 });
 
-// Avoiding messing with PATH during test execution.
-const addToolsToPath = jest
-  .spyOn(ToolsGetter.prototype as any, "addToolsToPath")
-  .mockResolvedValue(0);
-
-// test("testing get-cmake with restoreCache failure", async () => {
-//   const testId = crypto.randomBytes(16).toString("hex");
-//   process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
-
-//   const getter: ToolsGetter = new ToolsGetter();
-//   await expect(getter.run()).rejects.toThrowError();
-// });
+test("testing get-llvm with restoreCache failure", async () => {
+  const testId = crypto.randomBytes(16).toString("hex");
+  process.env.RUNNER_TEMP = path.join(os.tmpdir(), `${testId}`);
+  const getter: ToolsGetter = new ToolsGetter(
+    "20.1.6", "20250910-063105", undefined, undefined, "MinSizeRel",
+    false, false, true, false
+  );
+  await expect(getter.run()).rejects.toThrowError();
+});

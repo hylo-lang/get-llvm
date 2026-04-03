@@ -11,7 +11,7 @@ module.exports = {
   collectCoverage: true,
   coveragePathIgnorePatterns: ["<rootDir>/build/", "<rootDir>/node_modules/", "<rootDir>/__tests__", "__tests__"],
   collectCoverageFrom: [
-    "src/get-cmake.ts",
+    "src/get-llvm.ts",
     "!**/node_modules/**",
     "!**/build/**",
     "!**/dist/**"
