@@ -108353,42 +108353,59 @@ var import_cache = /* @__PURE__ */ __toESM(require_cache());
 var import_core = /* @__PURE__ */ __toESM(require_core());
 var import_io = /* @__PURE__ */ __toESM(require_io());
 var import_tool_cache = /* @__PURE__ */ __toESM(require_tool_cache());
+/** Adapts `@actions/core` to the {@link ActionsCore} port. */
 var ActionsCoreAdapter = class {
+	/** Returns the action input `name`, or an empty string when it is unset. */
 	getInput(name) {
 		return import_core.getInput(name);
 	}
+	/** Sets the action output `name` to `value`. */
 	setOutput(name, value) {
 		import_core.setOutput(name, value);
 	}
+	/** Exports `name=value` into the environment of subsequent steps. */
 	exportVariable(name, value) {
 		import_core.exportVariable(name, value);
 	}
+	/** Prepends `path` to PATH for subsequent steps. */
 	addPath(path) {
 		import_core.addPath(path);
 	}
+	/** Marks the action as failed with `message`. */
 	setFailed(message) {
 		import_core.setFailed(message);
 	}
+	/** Writes an informational log line. */
 	info(message) {
 		import_core.info(message);
 	}
+	/** Writes a debug log line. */
 	debug(message) {
 		import_core.debug(message);
 	}
+	/** Writes a warning annotation. */
 	warning(message) {
 		import_core.warning(message);
 	}
+	/** Writes an error annotation. */
 	error(message) {
 		import_core.error(message);
 	}
+	/** Runs `fn` inside a collapsible log group and resolves to its result. */
 	group(name, fn) {
 		return import_core.group(name, fn);
 	}
 };
+/** Adapts `@actions/cache` to the {@link CloudCache} port. */
 var ActionsCloudCache = class {
+	/** Restores `paths` for `key`; resolves to the matched key on a hit, or undefined on a miss. */
 	restore(paths, key) {
 		return import_cache.restoreCache(paths, key);
 	}
+	/**
+	* Saves `paths` under `key`. Re-throws validation errors; treats reserve
+	* conflicts and other cache-service errors as non-fatal (logged, then ignored).
+	*/
 	async save(paths, key) {
 		try {
 			await import_cache.saveCache(paths, key);
@@ -108399,15 +108416,20 @@ var ActionsCloudCache = class {
 		}
 	}
 };
+/** Adapts `@actions/tool-cache`'s local cache to the {@link LocalToolCache} port. */
 var ActionsLocalToolCache = class {
+	/** Returns the cached directory for the tool, or an empty string on a cache miss. */
 	find(toolName, version, arch) {
 		return import_tool_cache.find(toolName, version, arch);
 	}
+	/** Copies `sourceDir` into the tool cache and resolves to the cached directory path. */
 	cacheDir(sourceDir, toolName, version, arch) {
 		return import_tool_cache.cacheDir(sourceDir, toolName, version, arch);
 	}
 };
+/** Adapts `@actions/tool-cache`'s download + extract to the {@link Downloader} port. */
 var ToolCacheDownloader = class {
+	/** Downloads `url` and extracts the (zstd tar) archive into `outputPath`. */
 	async downloadAndExtract(url, outputPath) {
 		import_core.info(`Downloading LLVM from '${url}'`);
 		const downloaded = await import_tool_cache.downloadTool(url);
@@ -108415,7 +108437,9 @@ var ToolCacheDownloader = class {
 		await import_tool_cache.extractTar(downloaded, outputPath, ["-x", "--zstd"]);
 	}
 };
+/** Adapts node's `fs/promises` to the {@link FileSystem} port. */
 var NodeFileSystem = class {
+	/** Resolves to true when `path` is accessible, false otherwise. */
 	async directoryExists(path) {
 		try {
 			await fs_promises.access(path);
@@ -108425,33 +108449,42 @@ var NodeFileSystem = class {
 		}
 	}
 };
+/** Adapts `@actions/io` and `child_process` to the {@link Toolchain} port. */
 var SystemToolchain = class {
+	/** Resolves a tool on PATH to its absolute path; rejects when `check` is set and it is missing. */
 	which(tool, check) {
 		return import_io.which(tool, check);
 	}
+	/** Runs `command` synchronously and returns its trimmed stdout; throws on a non-zero exit. */
 	run(command) {
 		return (0, child_process.execSync)(command, { encoding: "utf8" }).trim();
 	}
 };
+/** Adapts node's `process` to the {@link Environment} port. */
 var ProcessEnvironment = class {
+	/** The host operating system. */
 	platform() {
 		return process.platform;
 	}
+	/** The host CPU architecture. */
 	arch() {
 		return process.arch;
 	}
+	/** The RUNNER_TEMP directory, or undefined when unset. */
 	runnerTemp() {
 		return process.env.RUNNER_TEMP;
 	}
+	/** The current PKG_CONFIG_PATH, or an empty string when unset. */
 	pkgConfigPath() {
 		return process.env.PKG_CONFIG_PATH || "";
 	}
+	/** Terminates the process with `code`, working around processes that fail to exit. */
 	exit(code) {
 		process.exitCode = code;
 		process.exit(code);
 	}
 };
-/** Builds the set of production adapters. */
+/** Builds the set of production adapters wiring the domain to the real world. */
 function defaultPorts() {
 	return {
 		core: new ActionsCoreAdapter(),
@@ -108481,6 +108514,7 @@ function hashCode(text) {
 }
 //#endregion
 //#region src/get-llvm.ts
+/** Maps a runner platform/arch to the archive architecture token; throws on an unsupported arch. */
 function architectureForArchive(platform, arch) {
 	switch (arch) {
 		case "arm64": return platform === "linux" ? "aarch64" : "arm64";
@@ -108488,6 +108522,7 @@ function architectureForArchive(platform, arch) {
 		default: throw new Error(`Unsupported architecture: ${arch}`);
 	}
 }
+/** Maps a runner platform to the archive OS/ABI token; throws on an unsupported platform. */
 function tripleSuffixForArchive(platform) {
 	switch (platform) {
 		case "linux": return "unknown-linux-gnu";
@@ -108496,16 +108531,28 @@ function tripleSuffixForArchive(platform) {
 		default: throw new Error(`Unsupported platform: ${platform}`);
 	}
 }
+/**
+* Builds the archive file name, e.g.
+* `llvm-20.1.6-x86_64-unknown-linux-gnu-MinSizeRel.tar.zst`. `architecture` and
+* `platform` are plain strings because they may be caller-supplied overrides.
+*/
 function getArchiveFileName(version, architecture, platform, buildConfig) {
 	return `llvm-${version}-${architecture}-${platform}-${buildConfig}.tar.zst`;
 }
+/** Narrows `value` to be defined, throwing if it is null or undefined. */
 function assertPresent(value) {
 	if (value === void 0) throw new Error("Value is undefined");
 	if (value === null) throw new Error("Value is null");
 }
+/** Returns `p` with every backslash replaced by a forward slash. */
 function normalizePathSeparators(p) {
 	return p.replaceAll("\\", "/");
 }
+/**
+* Downloads (or restores from cache) a prebuilt LLVM archive, exposes its
+* directories as action outputs, and optionally puts it on PATH. All external
+* effects go through the injected {@link Ports}.
+*/
 var ToolsGetter = class ToolsGetter {
 	static {
 		this.LOCAL_CACHE_NAME = "local-llvm-cache";
@@ -108513,6 +108560,7 @@ var ToolsGetter = class ToolsGetter {
 	static {
 		this.DOWNLOAD_URL_PREFIX = "https://github.com/hylo-lang/llvm-build/releases/download";
 	}
+	/** Resolves the archive architecture/triple from `options` or the runtime environment. */
 	constructor(options, ports) {
 		this.options = options;
 		this.ports = ports;
@@ -108523,27 +108571,39 @@ var ToolsGetter = class ToolsGetter {
 		this.llvmBuildArchitecture = options.llvmBuildArchitecture || architectureForArchive(this.env.platform(), this.env.arch());
 		this.llvmBuildTripleSuffix = options.llvmBuildTripleSuffix || tripleSuffixForArchive(this.env.platform());
 	}
+	/** Shorthand for the action inputs/outputs/logging port. */
 	get core() {
 		return this.ports.core;
 	}
+	/** Shorthand for the cloud cache port. */
 	get cloudCache() {
 		return this.ports.cloudCache;
 	}
+	/** Shorthand for the local tool cache port. */
 	get localCache() {
 		return this.ports.localCache;
 	}
+	/** Shorthand for the download/extract port. */
 	get downloader() {
 		return this.ports.downloader;
 	}
+	/** Shorthand for the filesystem port. */
 	get fs() {
 		return this.ports.fs;
 	}
+	/** Shorthand for the toolchain command port. */
 	get toolchain() {
 		return this.ports.toolchain;
 	}
+	/** Shorthand for the environment port. */
 	get env() {
 		return this.ports.env;
 	}
+	/**
+	* Installs LLVM end to end: resolve a cache key, try the local then cloud
+	* cache, download on a miss, verify the extracted layout, publish outputs,
+	* optionally update PATH/PKG_CONFIG_PATH, and save back to the caches.
+	*/
 	async run() {
 		let hashedKey;
 		let outPath;
@@ -108629,6 +108689,7 @@ var ToolsGetter = class ToolsGetter {
 			this.core.info(`Saved '${outPath}' to the local GitHub runner cache with key '${hashedKey}'.`);
 		});
 	}
+	/** Asserts `llvm-config` resolves on PATH and reports the expected version. */
 	async verifyLlvmConfigOnPath() {
 		return this.core.group(`Verifying llvm-config is on PATH`, async () => {
 			const llvmConfigWhichPath = await this.toolchain.which("llvm-config", true);
@@ -108638,6 +108699,7 @@ var ToolsGetter = class ToolsGetter {
 			if (llvmConfigVersion !== this.options.llvmVersion) throw new Error(`llvm-config on PATH has a version mismatch: expected ${this.options.llvmVersion}, got ${llvmConfigVersion}`);
 		});
 	}
+	/** Asserts the `llvm-config` in `llvmBin` reports the expected version. */
 	async verifyLLVMConfigVersionInDirectory(llvmBin) {
 		return this.core.group(`Verifying llvm-config in ${llvmBin}`, async () => {
 			const llvmConfigPath = path.join(llvmBin, "llvm-config");
@@ -108647,6 +108709,7 @@ var ToolsGetter = class ToolsGetter {
 			if (llvmConfigVersion !== this.options.llvmVersion) throw new Error(`llvm-config version mismatch: expected ${this.options.llvmVersion}, got ${llvmConfigVersion}`);
 		});
 	}
+	/** Prepends `folder` to PKG_CONFIG_PATH for subsequent steps. */
 	async doAddToPkgConfigPath(folder) {
 		await this.core.group(`Adding pkg-config folder to PKG_CONFIG_PATH`, async () => {
 			this.core.info(`Adding '${folder}' to PKG_CONFIG_PATH`);
@@ -108656,6 +108719,7 @@ var ToolsGetter = class ToolsGetter {
 			this.core.info(`PKG_CONFIG_PATH is now: ${newPath}`);
 		});
 	}
+	/** Adds `<llvmRootFolder>/bin` to PATH and checks `llvm-config`/`clang` resolve there. */
 	async addLLVMBinToPath(llvmRootFolder) {
 		await this.core.group(`Add LLVM's bin to PATH`, async () => {
 			const llvmBinPath = path.join(llvmRootFolder, "bin");
@@ -108669,27 +108733,38 @@ var ToolsGetter = class ToolsGetter {
 			});
 		});
 	}
+	/** Returns `<RUNNER_TEMP>/<subDir>`; throws when RUNNER_TEMP is unset. */
 	getOutputPath(subDir) {
 		const runnerTemp = this.env.runnerTemp();
 		if (!runnerTemp) throw new Error("Environment variable process.env.RUNNER_TEMP must be set, it is used as destination directory of the cache");
 		return path.join(runnerTemp, subDir);
 	}
+	/** Saves `outPath` to the cloud cache under the stringified `key`. */
 	saveCache(outPath, key) {
 		return this.cloudCache.save([outPath], key.toString());
 	}
+	/** Restores `outPath` from the cloud cache; resolves to the matched key or undefined on a miss. */
 	restoreCache(outPath, key) {
 		return this.cloudCache.restore([outPath], key.toString());
 	}
+	/** Throws unless `dirPath` exists on disk. */
 	async verifyDirectoryExists(dirPath) {
 		if (!await this.fs.directoryExists(dirPath)) throw new Error(`Directory '${dirPath}' does not exist.`);
 	}
+	/** Downloads the release archive `archiveFileName` and extracts it into `outputPath`. */
 	async downloadAndExtractLLVM(archiveFileName, outputPath) {
 		const url = `${ToolsGetter.DOWNLOAD_URL_PREFIX}/${this.options.llvmBuildRelease}/${archiveFileName}`;
 		await this.downloader.downloadAndExtract(url, outputPath);
 	}
+	/**
+	* Encodes a (possibly negative) hash as a valid semver string for the
+	* tool-cache version field: `|hash|` as major, `.0.0` for positive hashes and
+	* `.0.1` for negative ones to keep the mapping unique.
+	*/
 	static convertHashToFakeSemver(hashedKey) {
 		return `${Math.abs(hashedKey)}${hashedKey > 0 ? ".0.0" : ".0.1"}`;
 	}
+	/** Asserts pkg-config finds the `llvm` package and reports the expected version. */
 	async verifyPkgConfig() {
 		await this.core.group(`Verifying pkg-config setup`, async () => {
 			this.toolchain.run("pkg-config --exists llvm");
@@ -108704,6 +108779,7 @@ var ToolsGetter = class ToolsGetter {
 		});
 	}
 };
+/** Reads and normalizes the action inputs into {@link LlvmOptions}, applying defaults. */
 function readOptions(core) {
 	return {
 		llvmVersion: core.getInput("llvmVersion"),
@@ -108717,6 +108793,11 @@ function readOptions(core) {
 		useLocalCache: (core.getInput("useLocalCache") || "false").toLowerCase() === "true"
 	};
 }
+/**
+* Action entry point: reads inputs, runs the installer, and exits 0 on success
+* or -1000 after reporting failure. Never rejects — errors are turned into a
+* failed action status.
+*/
 async function main(ports) {
 	const { core, env } = ports;
 	try {

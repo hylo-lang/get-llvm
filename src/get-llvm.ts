@@ -17,7 +17,17 @@ import {
 } from "./ports";
 import { hashCode } from "./utils";
 
-function architectureForArchive(platform: NodeJS.Platform, arch: string): string {
+/** The architecture token used in an llvm-build archive file name. */
+type ArchiveArchitecture = "aarch64" | "arm64" | "x86_64";
+
+/** The OS/ABI ("triple suffix") token used in an llvm-build archive file name. */
+type ArchiveTripleSuffix = "unknown-linux-gnu" | "apple-darwin24.1.0" | "unknown-windows-msvc17";
+
+/** Maps a runner platform/arch to the archive architecture token; throws on an unsupported arch. */
+function architectureForArchive(
+  platform: NodeJS.Platform,
+  arch: NodeJS.Architecture,
+): ArchiveArchitecture {
   switch (arch) {
     case "arm64":
       return platform === "linux" ? "aarch64" : "arm64";
@@ -28,7 +38,8 @@ function architectureForArchive(platform: NodeJS.Platform, arch: string): string
   }
 }
 
-function tripleSuffixForArchive(platform: NodeJS.Platform): string {
+/** Maps a runner platform to the archive OS/ABI token; throws on an unsupported platform. */
+function tripleSuffixForArchive(platform: NodeJS.Platform): ArchiveTripleSuffix {
   switch (platform) {
     case "linux":
       return "unknown-linux-gnu";
@@ -41,15 +52,21 @@ function tripleSuffixForArchive(platform: NodeJS.Platform): string {
   }
 }
 
+/**
+ * Builds the archive file name, e.g.
+ * `llvm-20.1.6-x86_64-unknown-linux-gnu-MinSizeRel.tar.zst`. `architecture` and
+ * `platform` are plain strings because they may be caller-supplied overrides.
+ */
 function getArchiveFileName(
   version: string,
   architecture: string,
   platform: string,
   buildConfig: BuildConfig,
-) {
+): string {
   return `llvm-${version}-${architecture}-${platform}-${buildConfig}.tar.zst`;
 }
 
+/** Narrows `value` to be defined, throwing if it is null or undefined. */
 function assertPresent<T>(value: T | undefined | null): asserts value is T {
   if (value === undefined) {
     throw new Error("Value is undefined");
@@ -59,18 +76,29 @@ function assertPresent<T>(value: T | undefined | null): asserts value is T {
   }
 }
 
-function normalizePathSeparators(p: string) {
+/** Returns `p` with every backslash replaced by a forward slash. */
+function normalizePathSeparators(p: string): string {
   return p.replaceAll("\\", "/");
 }
 
+/**
+ * Downloads (or restores from cache) a prebuilt LLVM archive, exposes its
+ * directories as action outputs, and optionally puts it on PATH. All external
+ * effects go through the injected {@link Ports}.
+ */
 export class ToolsGetter {
+  /** Tool-cache entry name used for the local runner cache. */
   private static readonly LOCAL_CACHE_NAME = "local-llvm-cache";
+  /** Base URL the LLVM archives are downloaded from. */
   private static readonly DOWNLOAD_URL_PREFIX =
     "https://github.com/hylo-lang/llvm-build/releases/download";
 
+  /** Resolved archive architecture token (option override, else auto-detected). */
   private readonly llvmBuildArchitecture: string;
+  /** Resolved archive OS/ABI token (option override, else auto-detected). */
   private readonly llvmBuildTripleSuffix: string;
 
+  /** Resolves the archive architecture/triple from `options` or the runtime environment. */
   public constructor(
     private readonly options: LlvmOptions,
     private readonly ports: Ports,
@@ -85,28 +113,40 @@ export class ToolsGetter {
       options.llvmBuildTripleSuffix || tripleSuffixForArchive(this.env.platform());
   }
 
+  /** Shorthand for the action inputs/outputs/logging port. */
   private get core(): ActionsCore {
     return this.ports.core;
   }
+  /** Shorthand for the cloud cache port. */
   private get cloudCache(): CloudCache {
     return this.ports.cloudCache;
   }
+  /** Shorthand for the local tool cache port. */
   private get localCache(): LocalToolCache {
     return this.ports.localCache;
   }
+  /** Shorthand for the download/extract port. */
   private get downloader(): Downloader {
     return this.ports.downloader;
   }
+  /** Shorthand for the filesystem port. */
   private get fs(): FileSystem {
     return this.ports.fs;
   }
+  /** Shorthand for the toolchain command port. */
   private get toolchain(): Toolchain {
     return this.ports.toolchain;
   }
+  /** Shorthand for the environment port. */
   private get env(): Environment {
     return this.ports.env;
   }
 
+  /**
+   * Installs LLVM end to end: resolve a cache key, try the local then cloud
+   * cache, download on a miss, verify the extracted layout, publish outputs,
+   * optionally update PATH/PKG_CONFIG_PATH, and save back to the caches.
+   */
   public async run(): Promise<void> {
     let hashedKey: number | undefined;
     let outPath: string | undefined;
@@ -269,6 +309,7 @@ export class ToolsGetter {
     }
   }
 
+  /** Asserts `llvm-config` resolves on PATH and reports the expected version. */
   async verifyLlvmConfigOnPath() {
     return this.core.group(`Verifying llvm-config is on PATH`, async () => {
       const llvmConfigWhichPath: string = await this.toolchain.which("llvm-config", true);
@@ -285,6 +326,7 @@ export class ToolsGetter {
     });
   }
 
+  /** Asserts the `llvm-config` in `llvmBin` reports the expected version. */
   async verifyLLVMConfigVersionInDirectory(llvmBin: string) {
     return this.core.group(`Verifying llvm-config in ${llvmBin}`, async () => {
       const llvmConfigPath = path.join(llvmBin, "llvm-config");
@@ -300,6 +342,7 @@ export class ToolsGetter {
     });
   }
 
+  /** Prepends `folder` to PKG_CONFIG_PATH for subsequent steps. */
   private async doAddToPkgConfigPath(folder: string): Promise<void> {
     await this.core.group(`Adding pkg-config folder to PKG_CONFIG_PATH`, async () => {
       this.core.info(`Adding '${folder}' to PKG_CONFIG_PATH`);
@@ -310,6 +353,7 @@ export class ToolsGetter {
     });
   }
 
+  /** Adds `<llvmRootFolder>/bin` to PATH and checks `llvm-config`/`clang` resolve there. */
   private async addLLVMBinToPath(llvmRootFolder: string): Promise<void> {
     await this.core.group(`Add LLVM's bin to PATH`, async () => {
       const llvmBinPath = path.join(llvmRootFolder, "bin");
@@ -326,6 +370,7 @@ export class ToolsGetter {
     });
   }
 
+  /** Returns `<RUNNER_TEMP>/<subDir>`; throws when RUNNER_TEMP is unset. */
   private getOutputPath(subDir: string): string {
     const runnerTemp = this.env.runnerTemp();
     if (!runnerTemp)
@@ -335,32 +380,40 @@ export class ToolsGetter {
     return path.join(runnerTemp, subDir);
   }
 
+  /** Saves `outPath` to the cloud cache under the stringified `key`. */
   private saveCache(outPath: string, key: number): Promise<void> {
     return this.cloudCache.save([outPath], key.toString());
   }
 
+  /** Restores `outPath` from the cloud cache; resolves to the matched key or undefined on a miss. */
   private restoreCache(outPath: string, key: number): Promise<string | undefined> {
     return this.cloudCache.restore([outPath], key.toString());
   }
 
+  /** Throws unless `dirPath` exists on disk. */
   private async verifyDirectoryExists(dirPath: string): Promise<void> {
     if (!(await this.fs.directoryExists(dirPath))) {
       throw new Error(`Directory '${dirPath}' does not exist.`);
     }
   }
 
+  /** Downloads the release archive `archiveFileName` and extracts it into `outputPath`. */
   private async downloadAndExtractLLVM(archiveFileName: string, outputPath: string): Promise<void> {
     const url = `${ToolsGetter.DOWNLOAD_URL_PREFIX}/${this.options.llvmBuildRelease}/${archiveFileName}`;
     await this.downloader.downloadAndExtract(url, outputPath);
   }
 
+  /**
+   * Encodes a (possibly negative) hash as a valid semver string for the
+   * tool-cache version field: `|hash|` as major, `.0.0` for positive hashes and
+   * `.0.1` for negative ones to keep the mapping unique.
+   */
   private static convertHashToFakeSemver(hashedKey: number): string {
-    // Since the key may be negative and needs to drop the sign to work good as
-    // a major version number, let's ensure an unique version by switching the patch part.
     const minorPatch = hashedKey > 0 ? ".0.0" : ".0.1";
     return `${Math.abs(hashedKey)}${minorPatch}`;
   }
 
+  /** Asserts pkg-config finds the `llvm` package and reports the expected version. */
   private async verifyPkgConfig(): Promise<void> {
     await this.core.group(`Verifying pkg-config setup`, async () => {
       // Check if pkg-config can find the llvm package.
@@ -387,6 +440,7 @@ export class ToolsGetter {
   }
 }
 
+/** Reads and normalizes the action inputs into {@link LlvmOptions}, applying defaults. */
 function readOptions(core: ActionsCore): LlvmOptions {
   return {
     llvmVersion: core.getInput("llvmVersion"),
@@ -401,6 +455,11 @@ function readOptions(core: ActionsCore): LlvmOptions {
   };
 }
 
+/**
+ * Action entry point: reads inputs, runs the installer, and exits 0 on success
+ * or -1000 after reporting failure. Never rejects — errors are turned into a
+ * failed action status.
+ */
 export async function main(ports: Ports): Promise<void> {
   const { core, env } = ports;
   try {

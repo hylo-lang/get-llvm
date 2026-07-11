@@ -23,43 +23,60 @@ import {
   Toolchain,
 } from "./ports";
 
+/** Adapts `@actions/core` to the {@link ActionsCore} port. */
 class ActionsCoreAdapter implements ActionsCore {
+  /** Returns the action input `name`, or an empty string when it is unset. */
   getInput(name: string): string {
     return core.getInput(name);
   }
+  /** Sets the action output `name` to `value`. */
   setOutput(name: string, value: string): void {
     core.setOutput(name, value);
   }
+  /** Exports `name=value` into the environment of subsequent steps. */
   exportVariable(name: string, value: string): void {
     core.exportVariable(name, value);
   }
+  /** Prepends `path` to PATH for subsequent steps. */
   addPath(path: string): void {
     core.addPath(path);
   }
+  /** Marks the action as failed with `message`. */
   setFailed(message: string): void {
     core.setFailed(message);
   }
+  /** Writes an informational log line. */
   info(message: string): void {
     core.info(message);
   }
+  /** Writes a debug log line. */
   debug(message: string): void {
     core.debug(message);
   }
+  /** Writes a warning annotation. */
   warning(message: string): void {
     core.warning(message);
   }
+  /** Writes an error annotation. */
   error(message: string): void {
     core.error(message);
   }
+  /** Runs `fn` inside a collapsible log group and resolves to its result. */
   group<T>(name: string, fn: () => Promise<T>): Promise<T> {
     return core.group(name, fn);
   }
 }
 
+/** Adapts `@actions/cache` to the {@link CloudCache} port. */
 class ActionsCloudCache implements CloudCache {
+  /** Restores `paths` for `key`; resolves to the matched key on a hit, or undefined on a miss. */
   restore(paths: string[], key: string): Promise<string | undefined> {
     return cache.restoreCache(paths, key);
   }
+  /**
+   * Saves `paths` under `key`. Re-throws validation errors; treats reserve
+   * conflicts and other cache-service errors as non-fatal (logged, then ignored).
+   */
   async save(paths: string[], key: string): Promise<void> {
     try {
       await cache.saveCache(paths, key);
@@ -75,16 +92,21 @@ class ActionsCloudCache implements CloudCache {
   }
 }
 
+/** Adapts `@actions/tool-cache`'s local cache to the {@link LocalToolCache} port. */
 class ActionsLocalToolCache implements LocalToolCache {
+  /** Returns the cached directory for the tool, or an empty string on a cache miss. */
   find(toolName: string, version: string, arch: string): string {
     return tools.find(toolName, version, arch);
   }
+  /** Copies `sourceDir` into the tool cache and resolves to the cached directory path. */
   cacheDir(sourceDir: string, toolName: string, version: string, arch: string): Promise<string> {
     return tools.cacheDir(sourceDir, toolName, version, arch);
   }
 }
 
+/** Adapts `@actions/tool-cache`'s download + extract to the {@link Downloader} port. */
 class ToolCacheDownloader implements Downloader {
+  /** Downloads `url` and extracts the (zstd tar) archive into `outputPath`. */
   async downloadAndExtract(url: string, outputPath: string): Promise<void> {
     core.info(`Downloading LLVM from '${url}'`);
     const downloaded = await tools.downloadTool(url);
@@ -93,7 +115,9 @@ class ToolCacheDownloader implements Downloader {
   }
 }
 
+/** Adapts node's `fs/promises` to the {@link FileSystem} port. */
 class NodeFileSystem implements FileSystem {
+  /** Resolves to true when `path` is accessible, false otherwise. */
   async directoryExists(path: string): Promise<boolean> {
     try {
       await fs.access(path);
@@ -104,28 +128,37 @@ class NodeFileSystem implements FileSystem {
   }
 }
 
+/** Adapts `@actions/io` and `child_process` to the {@link Toolchain} port. */
 class SystemToolchain implements Toolchain {
+  /** Resolves a tool on PATH to its absolute path; rejects when `check` is set and it is missing. */
   which(tool: string, check?: boolean): Promise<string> {
     return io.which(tool, check);
   }
+  /** Runs `command` synchronously and returns its trimmed stdout; throws on a non-zero exit. */
   run(command: string): string {
     return execSync(command, { encoding: "utf8" }).trim();
   }
 }
 
+/** Adapts node's `process` to the {@link Environment} port. */
 class ProcessEnvironment implements Environment {
+  /** The host operating system. */
   platform(): NodeJS.Platform {
     return process.platform;
   }
-  arch(): string {
+  /** The host CPU architecture. */
+  arch(): NodeJS.Architecture {
     return process.arch;
   }
+  /** The RUNNER_TEMP directory, or undefined when unset. */
   runnerTemp(): string | undefined {
     return process.env.RUNNER_TEMP;
   }
+  /** The current PKG_CONFIG_PATH, or an empty string when unset. */
   pkgConfigPath(): string {
     return process.env.PKG_CONFIG_PATH || "";
   }
+  /** Terminates the process with `code`, working around processes that fail to exit. */
   exit(code: number): void {
     // Work around processes that fail to terminate, see:
     //  - https://github.com/lukka/get-cmake/issues/136
@@ -135,7 +168,7 @@ class ProcessEnvironment implements Environment {
   }
 }
 
-/** Builds the set of production adapters. */
+/** Builds the set of production adapters wiring the domain to the real world. */
 export function defaultPorts(): Ports {
   return {
     core: new ActionsCoreAdapter(),
