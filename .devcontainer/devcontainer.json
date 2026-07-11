@@ -1,34 +1,18 @@
 {
-  "name": "Node.js 20 Development Container",
+  "name": "get-llvm dev",
   "build": {
     "dockerfile": "Dockerfile"
   },
   "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "customizations": {
     "vscode": {
       "extensions": [
-        "ms-vscode.vscode-typescript-next",
-        "esbenp.prettier-vscode",
-        "ms-vscode.vscode-json",
-        "bradlc.vscode-tailwindcss",
-        "ms-vscode.vscode-eslint",
-        "ms-vscode.test-adapter-converter",
-        "ms-vscode.vscode-jest"
-      ],
-      "settings": {
-        "typescript.suggest.autoImports": true,
-        "typescript.updateImportsOnFileMove.enabled": "always",
-        "editor.formatOnSave": true,
-        "editor.codeActionsOnSave": {
-          "source.fixAll.eslint": "explicit"
-        }
-      }
+        "dbaeumer.vscode-eslint",
+        "orta.vscode-jest"
+      ]
     }
   },
-  "forwardPorts": [3000, 8080],
-  "postCreateCommand": "npm install",
-  "remoteUser": "node"
+  "postCreateCommand": "npm install"
 }
