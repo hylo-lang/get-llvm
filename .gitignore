@@ -9,11 +9,7 @@ token.txt
 .vscode
 *.tgz
 build
-__tests__/build Directory
-__tests__/b
 .npmrc
 coverage
 .DS_Store
 .env
-!/.latest_cmake_version
-!/.latest_ninja_version

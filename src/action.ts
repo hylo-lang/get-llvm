@@ -2,10 +2,11 @@
 // Released under the term specified in file LICENSE.txt
 // SPDX short identifier: MIT
 
-import * as getter from "./get-llvm";
+import { defaultPorts } from "./adapters";
+import { main } from "./get-llvm";
 
-// Main entry point of the task.
-getter.main().catch((error) => {
+// Main entry point of the task: wire the production adapters into the domain.
+main(defaultPorts()).catch((error) => {
   console.error("Error in main:", error);
   process.exit(1);
 });

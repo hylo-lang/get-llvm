@@ -2,11 +2,11 @@
 # Released under the term specified in file LICENSE.txt
 # SPDX short identifier: MIT
 
-name: 'get-cmake'
+name: 'get-llvm'
 description: 'Installs LLVM, and caches them on cloud based GitHub cache, and/or on the local GitHub runner cache.'
 author: 'Ambrus Tóth'
 runs:
-  using: 'node22'
+  using: 'node24'
   main: 'dist/index.js'
 
 inputs:
