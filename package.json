@@ -10,20 +10,20 @@
   "license": "MIT",
   "scripts": {
     "clean": "rm -rf ./build ./dist",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint src",
     "format": "oxfmt src tests",
     "format:check": "oxfmt --check src tests",
-    "pack": "npm run lint && npm run build && ncc build build/src/action.js -o dist",
+    "pack": "npm run lint && npm run typecheck && npm run build",
     "test": "npm run pack && vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/semver": "^7.3.13",
-    "@vercel/ncc": "^0.38.0",
     "@vitest/coverage-v8": "^4.1.10",
     "oxfmt": "^0.58.0",
     "oxlint": "^1.73.0",
+    "tsdown": "^0.22.5",
     "typescript": "^5.4.0",
     "vitest": "^4.1.10"
   },
@@ -31,7 +31,6 @@
     "@actions/cache": "^4.0.3",
     "@actions/core": "^1.10.0",
     "@actions/io": "^1.1.2",
-    "@actions/tool-cache": "^2.0.1",
-    "semver": "^7.5.2"
+    "@actions/tool-cache": "^2.0.1"
   }
 }
