@@ -52,8 +52,8 @@ export interface ActionsCore {
   warning(message: string): void;
   /** Writes an error annotation. */
   error(message: string): void;
-  /** Runs `fn` inside a collapsible log group and resolves to its result. */
-  group<T>(name: string, fn: () => Promise<T>): Promise<T>;
+  /** Runs `body` inside a collapsible log group and resolves to its result. */
+  group<T>(name: string, body: () => Promise<T>): Promise<T>;
 }
 
 /** GitHub cloud cache (`@actions/cache`). */
@@ -66,10 +66,15 @@ export interface CloudCache {
 
 /** Local runner tool cache (`@actions/tool-cache`). */
 export interface LocalToolCache {
-  /** Returns the cached directory for the tool, or an empty string on a cache miss. */
-  find(toolName: string, version: string, arch: string): string;
-  /** Copies `sourceDir` into the tool cache and resolves to the cached directory path. */
-  cacheDir(sourceDir: string, toolName: string, version: string, arch: string): Promise<string>;
+  /** Returns the cached directory for the tool, or null on a cache miss. */
+  find(toolName: string, version: string, architecture: string): string | null;
+  /** Copies `sourceDirectory` into the tool cache and resolves to the cached directory path. */
+  cacheDir(
+    sourceDirectory: string,
+    toolName: string,
+    version: string,
+    architecture: string,
+  ): Promise<string>;
 }
 
 /** Downloads and extracts a remote archive into a directory. */
@@ -97,7 +102,7 @@ export interface Environment {
   /** The host operating system. */
   platform(): NodeJS.Platform;
   /** The host CPU architecture (e.g. `"x64"`, `"arm64"`). */
-  arch(): NodeJS.Architecture;
+  architecture(): NodeJS.Architecture;
   /** The RUNNER_TEMP directory used as the install/cache destination, or undefined when unset. */
   runnerTemp(): string | undefined;
   /** The current PKG_CONFIG_PATH, or an empty string when unset. */
@@ -117,9 +122,9 @@ export interface Ports {
   /** Archive download + extraction. */
   downloader: Downloader;
   /** Filesystem queries. */
-  fs: FileSystem;
+  fileSystem: FileSystem;
   /** External toolchain command execution. */
   toolchain: Toolchain;
   /** Ambient runtime facts and process control. */
-  env: Environment;
+  environment: Environment;
 }

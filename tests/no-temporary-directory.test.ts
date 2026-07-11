@@ -7,7 +7,7 @@ import { Fakes, options } from "./support/fakes";
 
 test("a missing RUNNER_TEMP directory rejects", async () => {
   const fakes = new Fakes();
-  fakes.env.runnerTempValue = undefined;
+  fakes.environment.runnerTempValue = undefined;
 
   const getter = new ToolsGetter(options(), fakes);
   await expect(getter.run()).rejects.toThrowError();

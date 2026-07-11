@@ -26,7 +26,7 @@ test("cloud/local caches, all misses: download, then save to each enabled cache"
       useLocalCache: String(m.localCache),
     };
     fakes.cloudCache.restoreResult = undefined; // cloud miss
-    fakes.localCache.findResult = ""; // local miss
+    fakes.localCache.findResult = null; // local miss
 
     await main(fakes);
 
@@ -53,7 +53,7 @@ test("cloud/local cache hits skip downloading and re-saving", async () => {
       useCloudCache: String(m.cloudCache),
       useLocalCache: String(m.localCache),
     };
-    fakes.localCache.findResult = m.localHit ? "local-hit-dir" : "";
+    fakes.localCache.findResult = m.localHit ? "local-hit-dir" : null;
     fakes.cloudCache.restoreResult = m.cloudHit ? "cloud-hit-key" : undefined;
 
     await main(fakes);
@@ -88,7 +88,7 @@ test("local cache store then restore: download happens once", async () => {
   let expectedDownloads = 0;
   for (const localHit of [false, true]) {
     // Simulate the entry stored on the first (miss) iteration being found on the next.
-    fakes.localCache.findResult = localHit ? "local-hit-dir" : "";
+    fakes.localCache.findResult = localHit ? "local-hit-dir" : null;
 
     await main(fakes);
 

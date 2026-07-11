@@ -21,5 +21,5 @@ test("a successful run reports success and never fails", async () => {
   expect(fakes.core.errors.length).toBe(0);
   expect(fakes.downloader.calls.length).toBe(1);
   expect(fakes.core.outputs["llvmRootDirectory"]).toBeTruthy();
-  expect(fakes.env.exitCalls).toContain(0);
+  expect(fakes.environment.exitCalls).toContain(0);
 });

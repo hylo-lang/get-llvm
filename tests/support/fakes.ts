@@ -67,9 +67,9 @@ export class FakeCore implements ActionsCore {
   error(message: string): void {
     this.errors.push(message);
   }
-  /** Runs `fn` directly, without any log grouping. */
-  group<T>(_name: string, fn: () => Promise<T>): Promise<T> {
-    return fn();
+  /** Runs `body` directly, without any log grouping. */
+  group<T>(_name: string, body: () => Promise<T>): Promise<T> {
+    return body();
   }
 }
 
@@ -101,26 +101,31 @@ export class FakeCloudCache implements CloudCache {
 /** Recording fake for {@link LocalToolCache} with a configurable find outcome. */
 export class FakeLocalToolCache implements LocalToolCache {
   /** Arguments of each `find` call, in order. */
-  findCalls: { toolName: string; version: string; arch: string }[] = [];
+  findCalls: { toolName: string; version: string; architecture: string }[] = [];
   /** Arguments of each `cacheDir` call, in order. */
-  cacheDirCalls: { sourceDir: string; toolName: string; version: string; arch: string }[] = [];
-  /** Value returned by `find`: a non-empty string means a cache hit. */
-  findResult = "";
+  cacheDirCalls: {
+    sourceDirectory: string;
+    toolName: string;
+    version: string;
+    architecture: string;
+  }[] = [];
+  /** Value returned by `find`: a directory string means a cache hit, null a miss. */
+  findResult: string | null = null;
 
   /** Records the call and returns `findResult`. */
-  find(toolName: string, version: string, arch: string): string {
-    this.findCalls.push({ toolName, version, arch });
+  find(toolName: string, version: string, architecture: string): string | null {
+    this.findCalls.push({ toolName, version, architecture });
     return this.findResult;
   }
-  /** Records the call and echoes back `sourceDir` as the cached path. */
+  /** Records the call and echoes back `sourceDirectory` as the cached path. */
   async cacheDir(
-    sourceDir: string,
+    sourceDirectory: string,
     toolName: string,
     version: string,
-    arch: string,
+    architecture: string,
   ): Promise<string> {
-    this.cacheDirCalls.push({ sourceDir, toolName, version, arch });
-    return sourceDir;
+    this.cacheDirCalls.push({ sourceDirectory, toolName, version, architecture });
+    return sourceDirectory;
   }
 }
 
@@ -176,8 +181,8 @@ export class FakeToolchain implements Toolchain {
 export class FakeEnvironment implements Environment {
   /** Value returned by `platform`. */
   platformValue: NodeJS.Platform = "linux";
-  /** Value returned by `arch`. */
-  archValue: NodeJS.Architecture = "x64";
+  /** Value returned by `architecture`. */
+  architectureValue: NodeJS.Architecture = "x64";
   /** Value returned by `runnerTemp` (undefined simulates an unset RUNNER_TEMP). */
   runnerTempValue: string | undefined = "/tmp/runner-temp";
   /** Value returned by `pkgConfigPath`. */
@@ -189,9 +194,9 @@ export class FakeEnvironment implements Environment {
   platform(): NodeJS.Platform {
     return this.platformValue;
   }
-  /** Returns `archValue`. */
-  arch(): NodeJS.Architecture {
-    return this.archValue;
+  /** Returns `architectureValue`. */
+  architecture(): NodeJS.Architecture {
+    return this.architectureValue;
   }
   /** Returns `runnerTempValue`. */
   runnerTemp(): string | undefined {
@@ -218,11 +223,11 @@ export class Fakes implements Ports {
   /** Network-free downloader fake. */
   downloader = new FakeDownloader();
   /** Configurable filesystem fake. */
-  fs = new FakeFileSystem();
+  fileSystem = new FakeFileSystem();
   /** Configurable toolchain fake. */
   toolchain = new FakeToolchain();
   /** Mutable environment fake. */
-  env = new FakeEnvironment();
+  environment = new FakeEnvironment();
 }
 
 /** Returns sensible default install options; override just what a test cares about. */

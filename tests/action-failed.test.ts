@@ -15,5 +15,5 @@ test("a failing run reports the failure and never saves a cache", async () => {
   expect(fakes.core.failed.length).toBe(1);
   expect(fakes.core.errors.length).toBe(1);
   expect(fakes.localCache.cacheDirCalls.length).toBe(0);
-  expect(fakes.env.exitCalls).toContain(-1000);
+  expect(fakes.environment.exitCalls).toContain(-1000);
 });

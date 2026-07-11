@@ -61,9 +61,9 @@ class ActionsCoreAdapter implements ActionsCore {
   error(message: string): void {
     core.error(message);
   }
-  /** Runs `fn` inside a collapsible log group and resolves to its result. */
-  group<T>(name: string, fn: () => Promise<T>): Promise<T> {
-    return core.group(name, fn);
+  /** Runs `body` inside a collapsible log group and resolves to its result. */
+  group<T>(name: string, body: () => Promise<T>): Promise<T> {
+    return core.group(name, body);
   }
 }
 
@@ -94,13 +94,18 @@ class ActionsCloudCache implements CloudCache {
 
 /** Adapts `@actions/tool-cache`'s local cache to the {@link LocalToolCache} port. */
 class ActionsLocalToolCache implements LocalToolCache {
-  /** Returns the cached directory for the tool, or an empty string on a cache miss. */
-  find(toolName: string, version: string, arch: string): string {
-    return tools.find(toolName, version, arch);
+  /** Returns the cached directory for the tool, or null on a cache miss (tool-cache uses ""). */
+  find(toolName: string, version: string, architecture: string): string | null {
+    return tools.find(toolName, version, architecture) || null;
   }
-  /** Copies `sourceDir` into the tool cache and resolves to the cached directory path. */
-  cacheDir(sourceDir: string, toolName: string, version: string, arch: string): Promise<string> {
-    return tools.cacheDir(sourceDir, toolName, version, arch);
+  /** Copies `sourceDirectory` into the tool cache and resolves to the cached directory path. */
+  cacheDir(
+    sourceDirectory: string,
+    toolName: string,
+    version: string,
+    architecture: string,
+  ): Promise<string> {
+    return tools.cacheDir(sourceDirectory, toolName, version, architecture);
   }
 }
 
@@ -147,7 +152,7 @@ class ProcessEnvironment implements Environment {
     return process.platform;
   }
   /** The host CPU architecture. */
-  arch(): NodeJS.Architecture {
+  architecture(): NodeJS.Architecture {
     return process.arch;
   }
   /** The RUNNER_TEMP directory, or undefined when unset. */
@@ -175,8 +180,8 @@ export function defaultPorts(): Ports {
     cloudCache: new ActionsCloudCache(),
     localCache: new ActionsLocalToolCache(),
     downloader: new ToolCacheDownloader(),
-    fs: new NodeFileSystem(),
+    fileSystem: new NodeFileSystem(),
     toolchain: new SystemToolchain(),
-    env: new ProcessEnvironment(),
+    environment: new ProcessEnvironment(),
   };
 }

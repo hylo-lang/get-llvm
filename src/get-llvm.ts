@@ -23,18 +23,18 @@ type ArchiveArchitecture = "aarch64" | "arm64" | "x86_64";
 /** The OS/ABI ("triple suffix") token used in an llvm-build archive file name. */
 type ArchiveTripleSuffix = "unknown-linux-gnu" | "apple-darwin24.1.0" | "unknown-windows-msvc17";
 
-/** Maps a runner platform/arch to the archive architecture token; throws on an unsupported arch. */
+/** Maps a runner platform/architecture to the archive architecture token; throws on an unsupported architecture. */
 function architectureForArchive(
   platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
+  architecture: NodeJS.Architecture,
 ): ArchiveArchitecture {
-  switch (arch) {
+  switch (architecture) {
     case "arm64":
       return platform === "linux" ? "aarch64" : "arm64";
     case "x64":
       return "x86_64";
     default:
-      throw new Error(`Unsupported architecture: ${arch}`);
+      throw new Error(`Unsupported architecture: ${architecture}`);
   }
 }
 
@@ -76,9 +76,9 @@ function assertPresent<T>(value: T | undefined | null): asserts value is T {
   }
 }
 
-/** Returns `p` with every backslash replaced by a forward slash. */
-function normalizePathSeparators(p: string): string {
-  return p.replaceAll("\\", "/");
+/** Returns `filePath` with every backslash replaced by a forward slash. */
+function normalizePathSeparators(filePath: string): string {
+  return filePath.replaceAll("\\", "/");
 }
 
 /**
@@ -108,9 +108,10 @@ export class ToolsGetter {
     this.core.info(`useCloudCache: ${options.useCloudCache}`);
     this.core.info(`useLocalCache: ${options.useLocalCache}`);
     this.llvmBuildArchitecture =
-      options.llvmBuildArchitecture || architectureForArchive(this.env.platform(), this.env.arch());
+      options.llvmBuildArchitecture ||
+      architectureForArchive(this.environment.platform(), this.environment.architecture());
     this.llvmBuildTripleSuffix =
-      options.llvmBuildTripleSuffix || tripleSuffixForArchive(this.env.platform());
+      options.llvmBuildTripleSuffix || tripleSuffixForArchive(this.environment.platform());
   }
 
   /** Shorthand for the action inputs/outputs/logging port. */
@@ -130,16 +131,16 @@ export class ToolsGetter {
     return this.ports.downloader;
   }
   /** Shorthand for the filesystem port. */
-  private get fs(): FileSystem {
-    return this.ports.fs;
+  private get fileSystem(): FileSystem {
+    return this.ports.fileSystem;
   }
   /** Shorthand for the toolchain command port. */
   private get toolchain(): Toolchain {
     return this.ports.toolchain;
   }
   /** Shorthand for the environment port. */
-  private get env(): Environment {
-    return this.ports.env;
+  private get environment(): Environment {
+    return this.ports.environment;
   }
 
   /**
@@ -149,10 +150,10 @@ export class ToolsGetter {
    */
   public async run(): Promise<void> {
     let hashedKey: number | undefined;
-    let outPath: string | undefined;
+    let outputPath: string | undefined;
     let cloudCacheHitKey: string | undefined = undefined;
     let localCacheHit = false;
-    let localPath: string | undefined = undefined;
+    let localPath: string | null | undefined = undefined;
 
     const archiveFileName = getArchiveFileName(
       this.options.llvmVersion,
@@ -167,12 +168,12 @@ export class ToolsGetter {
       hashedKey = hashCode(cacheKey);
       this.core.info(`Cache key: '${cacheKey}'.`);
       this.core.debug(`hash('${cacheKey}') === '${hashedKey}'`);
-      outPath = this.getOutputPath(hashedKey.toString());
-      this.core.info(`Local install root: '${outPath}''.`);
+      outputPath = this.getOutputPath(hashedKey.toString());
+      this.core.info(`Local install root: '${outputPath}''.`);
     });
 
     assertPresent(hashedKey);
-    assertPresent(outPath);
+    assertPresent(outputPath);
 
     if (this.options.useLocalCache) {
       await this.core.group(
@@ -183,10 +184,9 @@ export class ToolsGetter {
           localPath = this.localCache.find(
             ToolsGetter.LOCAL_CACHE_NAME,
             ToolsGetter.convertHashToFakeSemver(hashedKey),
-            this.env.platform(),
+            this.environment.platform(),
           );
-          // Silly tool-cache API does return an empty string in case of cache miss.
-          localCacheHit = !!localPath;
+          localCacheHit = localPath !== null;
 
           this.core.info(localCacheHit ? "Local cache hit." : "Local cache miss.");
         },
@@ -196,12 +196,12 @@ export class ToolsGetter {
     if (!localCacheHit) {
       if (this.options.useCloudCache) {
         await this.core.group(
-          `Restoring from GitHub cloud cache using key '${hashedKey}' into '${outPath}'`,
+          `Restoring from GitHub cloud cache using key '${hashedKey}' into '${outputPath}'`,
           async () => {
-            assertPresent(outPath);
+            assertPresent(outputPath);
             assertPresent(hashedKey);
 
-            cloudCacheHitKey = await this.restoreCache(outPath, hashedKey);
+            cloudCacheHitKey = await this.restoreCache(outputPath, hashedKey);
             this.core.info(
               cloudCacheHitKey === undefined ? "Cloud cache miss." : "Cloud cache hit.",
             );
@@ -210,10 +210,10 @@ export class ToolsGetter {
       }
 
       if (cloudCacheHitKey === undefined) {
-        await this.downloadAndExtractLLVM(archiveFileName, outPath);
+        await this.downloadAndExtractLLVM(archiveFileName, outputPath);
       }
 
-      localPath = outPath;
+      localPath = outputPath;
     }
 
     if (!localPath) {
@@ -221,7 +221,7 @@ export class ToolsGetter {
     }
 
     const llvmRootFolder = normalizePathSeparators(
-      path.join(outPath, archiveFileName.replace(".tar.zst", "")),
+      path.join(outputPath, archiveFileName.replace(".tar.zst", "")),
     );
     this.core.setOutput("llvmRootDirectory", llvmRootFolder);
     this.core.info(`LLVM root directory: ${llvmRootFolder}`);
@@ -270,7 +270,7 @@ export class ToolsGetter {
 
     if (this.options.useCloudCache && cloudCacheHitKey === undefined) {
       await this.core.group(`Saving to GitHub cloud cache using key '${hashedKey}'`, async () => {
-        assertPresent(outPath);
+        assertPresent(outputPath);
         assertPresent(hashedKey);
 
         if (localCacheHit) {
@@ -278,8 +278,10 @@ export class ToolsGetter {
             "Skipping saving to cloud cache since there was local cache hit for the computed key.",
           );
         } else if (cloudCacheHitKey === undefined) {
-          await this.saveCache(outPath, hashedKey);
-          this.core.info(`Saved '${outPath}' to the GitHub cache service with key '${hashedKey}'.`);
+          await this.saveCache(outputPath, hashedKey);
+          this.core.info(
+            `Saved '${outputPath}' to the GitHub cache service with key '${hashedKey}'.`,
+          );
         } else {
           this.core.info(
             "Skipping saving to cloud cache since there was a cache hit for the computed key.",
@@ -290,7 +292,7 @@ export class ToolsGetter {
 
     if (this.options.useLocalCache && !localCacheHit && localPath) {
       await this.core.group(
-        `Saving to local cache using key '${hashedKey}' from '${outPath}'`,
+        `Saving to local cache using key '${hashedKey}' from '${outputPath}'`,
         async () => {
           assertPresent(localPath);
           assertPresent(hashedKey);
@@ -299,10 +301,10 @@ export class ToolsGetter {
             localPath,
             ToolsGetter.LOCAL_CACHE_NAME,
             ToolsGetter.convertHashToFakeSemver(hashedKey),
-            this.env.platform(),
+            this.environment.platform(),
           );
           this.core.info(
-            `Saved '${outPath}' to the local GitHub runner cache with key '${hashedKey}'.`,
+            `Saved '${outputPath}' to the local GitHub runner cache with key '${hashedKey}'.`,
           );
         },
       );
@@ -326,10 +328,10 @@ export class ToolsGetter {
     });
   }
 
-  /** Asserts the `llvm-config` in `llvmBin` reports the expected version. */
-  async verifyLLVMConfigVersionInDirectory(llvmBin: string) {
-    return this.core.group(`Verifying llvm-config in ${llvmBin}`, async () => {
-      const llvmConfigPath = path.join(llvmBin, "llvm-config");
+  /** Asserts the `llvm-config` in `llvmBinDirectory` reports the expected version. */
+  async verifyLLVMConfigVersionInDirectory(llvmBinDirectory: string) {
+    return this.core.group(`Verifying llvm-config in ${llvmBinDirectory}`, async () => {
+      const llvmConfigPath = path.join(llvmBinDirectory, "llvm-config");
       this.core.info(`Actual path to llvm-config is: '${llvmConfigPath}'`);
 
       const llvmConfigVersion = this.toolchain.run(`"${llvmConfigPath}" --version`);
@@ -346,7 +348,7 @@ export class ToolsGetter {
   private async doAddToPkgConfigPath(folder: string): Promise<void> {
     await this.core.group(`Adding pkg-config folder to PKG_CONFIG_PATH`, async () => {
       this.core.info(`Adding '${folder}' to PKG_CONFIG_PATH`);
-      const currentPath = this.env.pkgConfigPath();
+      const currentPath = this.environment.pkgConfigPath();
       const newPath = folder + path.delimiter + currentPath;
       this.core.exportVariable("PKG_CONFIG_PATH", newPath);
       this.core.info(`PKG_CONFIG_PATH is now: ${newPath}`);
@@ -370,30 +372,30 @@ export class ToolsGetter {
     });
   }
 
-  /** Returns `<RUNNER_TEMP>/<subDir>`; throws when RUNNER_TEMP is unset. */
-  private getOutputPath(subDir: string): string {
-    const runnerTemp = this.env.runnerTemp();
+  /** Returns `<RUNNER_TEMP>/<subDirectory>`; throws when RUNNER_TEMP is unset. */
+  private getOutputPath(subDirectory: string): string {
+    const runnerTemp = this.environment.runnerTemp();
     if (!runnerTemp)
       throw new Error(
-        "Environment variable process.env.RUNNER_TEMP must be set, it is used as destination directory of the cache",
+        "The RUNNER_TEMP environment variable must be set; it is used as the destination directory of the cache",
       );
-    return path.join(runnerTemp, subDir);
+    return path.join(runnerTemp, subDirectory);
   }
 
-  /** Saves `outPath` to the cloud cache under the stringified `key`. */
-  private saveCache(outPath: string, key: number): Promise<void> {
-    return this.cloudCache.save([outPath], key.toString());
+  /** Saves `outputPath` to the cloud cache under the stringified `key`. */
+  private saveCache(outputPath: string, key: number): Promise<void> {
+    return this.cloudCache.save([outputPath], key.toString());
   }
 
-  /** Restores `outPath` from the cloud cache; resolves to the matched key or undefined on a miss. */
-  private restoreCache(outPath: string, key: number): Promise<string | undefined> {
-    return this.cloudCache.restore([outPath], key.toString());
+  /** Restores `outputPath` from the cloud cache; resolves to the matched key or undefined on a miss. */
+  private restoreCache(outputPath: string, key: number): Promise<string | undefined> {
+    return this.cloudCache.restore([outputPath], key.toString());
   }
 
-  /** Throws unless `dirPath` exists on disk. */
-  private async verifyDirectoryExists(dirPath: string): Promise<void> {
-    if (!(await this.fs.directoryExists(dirPath))) {
-      throw new Error(`Directory '${dirPath}' does not exist.`);
+  /** Throws unless `directoryPath` exists on disk. */
+  private async verifyDirectoryExists(directoryPath: string): Promise<void> {
+    if (!(await this.fileSystem.directoryExists(directoryPath))) {
+      throw new Error(`Directory '${directoryPath}' does not exist.`);
     }
   }
 
@@ -461,19 +463,19 @@ function readOptions(core: ActionsCore): LlvmOptions {
  * failed action status.
  */
 export async function main(ports: Ports): Promise<void> {
-  const { core, env } = ports;
+  const { core, environment } = ports;
   try {
     const llvmGetter = new ToolsGetter(readOptions(core), ports);
     await llvmGetter.run();
     core.info("get-llvm action execution succeeded");
-    env.exit(0);
-  } catch (err) {
-    const error: Error = err as Error;
+    environment.exit(0);
+  } catch (caughtError) {
+    const error: Error = caughtError as Error;
     if (error?.stack) {
       core.error(error.stack);
     }
-    const errorAsString = (err ?? "undefined error").toString();
+    const errorAsString = (caughtError ?? "undefined error").toString();
     core.setFailed(`get-llvm action execution failed: '${errorAsString}'`);
-    env.exit(-1000);
+    environment.exit(-1000);
   }
 }
