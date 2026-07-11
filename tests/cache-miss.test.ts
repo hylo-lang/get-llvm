@@ -6,14 +6,14 @@ import { ToolsGetter } from "../src/get-llvm";
 import { Fakes, options } from "./support/fakes";
 
 test("cloud cache miss: downloads then saves", async () => {
-  const fakes = new Fakes();
-  fakes.cloudCache.restoreResult = undefined; // cloud cache miss
+  const ports = new Fakes();
+  ports.cloudCache.restoreResult = undefined; // cloud cache miss
 
-  const getter = new ToolsGetter(options({ useCloudCache: true }), fakes);
+  const getter = new ToolsGetter(options({ useCloudCache: true }), ports);
   await getter.run();
 
-  expect(fakes.cloudCache.restoreCalls.length).toBe(1);
-  expect(fakes.downloader.calls.length).toBe(1);
-  expect(fakes.cloudCache.saveCalls.length).toBe(1);
-  expect(fakes.core.failed.length).toBe(0);
+  expect(ports.cloudCache.restoreCalls.length).toBe(1);
+  expect(ports.downloader.calls.length).toBe(1);
+  expect(ports.cloudCache.saveCalls.length).toBe(1);
+  expect(ports.core.failed.length).toBe(0);
 });

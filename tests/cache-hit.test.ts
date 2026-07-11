@@ -6,13 +6,13 @@ import { ToolsGetter } from "../src/get-llvm";
 import { Fakes, options } from "./support/fakes";
 
 test("cloud cache hit: restores and skips saving", async () => {
-  const fakes = new Fakes();
-  fakes.cloudCache.restoreResult = "some-key"; // cloud cache hit
+  const ports = new Fakes();
+  ports.cloudCache.restoreResult = "some-key"; // cloud cache hit
 
-  const getter = new ToolsGetter(options({ useCloudCache: true }), fakes);
+  const getter = new ToolsGetter(options({ useCloudCache: true }), ports);
   await getter.run();
 
-  expect(fakes.cloudCache.restoreCalls.length).toBe(1);
-  expect(fakes.cloudCache.saveCalls.length).toBe(0);
-  expect(fakes.downloader.calls.length).toBe(0);
+  expect(ports.cloudCache.restoreCalls.length).toBe(1);
+  expect(ports.cloudCache.saveCalls.length).toBe(0);
+  expect(ports.downloader.calls.length).toBe(0);
 });

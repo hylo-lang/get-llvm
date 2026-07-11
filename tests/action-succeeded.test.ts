@@ -6,20 +6,20 @@ import { main } from "../src/get-llvm";
 import { Fakes } from "./support/fakes";
 
 test("a successful run reports success and never fails", async () => {
-  const fakes = new Fakes();
-  fakes.core.inputs = {
+  const ports = new Fakes();
+  ports.core.inputs = {
     llvmVersion: "20.1.6",
     llvmBuildRelease: "20250910-063105",
     addToPath: "false",
     addToPkgConfigPath: "false",
   };
-  fakes.cloudCache.restoreResult = undefined; // cloud miss -> download
+  ports.cloudCache.restoreResult = undefined; // cloud miss -> download
 
-  await main(fakes);
+  await main(ports);
 
-  expect(fakes.core.failed.length).toBe(0);
-  expect(fakes.core.errors.length).toBe(0);
-  expect(fakes.downloader.calls.length).toBe(1);
-  expect(fakes.core.outputs["llvmRootDirectory"]).toBeTruthy();
-  expect(fakes.environment.exitCalls).toContain(0);
+  expect(ports.core.failed.length).toBe(0);
+  expect(ports.core.errors.length).toBe(0);
+  expect(ports.downloader.calls.length).toBe(1);
+  expect(ports.core.outputs["llvmRootDirectory"]).toBeTruthy();
+  expect(ports.environment.exitCalls).toContain(0);
 });

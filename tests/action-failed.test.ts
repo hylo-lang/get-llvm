@@ -6,14 +6,14 @@ import { main } from "../src/get-llvm";
 import { Fakes } from "./support/fakes";
 
 test("a failing run reports the failure and never saves a cache", async () => {
-  const fakes = new Fakes();
-  fakes.core.inputs = { useCloudCache: "true" };
-  fakes.cloudCache.restoreThrows = true; // force the run to fail early
+  const ports = new Fakes();
+  ports.core.inputs = { useCloudCache: "true" };
+  ports.cloudCache.restoreThrows = true; // force the run to fail early
 
-  await main(fakes);
+  await main(ports);
 
-  expect(fakes.core.failed.length).toBe(1);
-  expect(fakes.core.errors.length).toBe(1);
-  expect(fakes.localCache.cacheDirCalls.length).toBe(0);
-  expect(fakes.environment.exitCalls).toContain(-1000);
+  expect(ports.core.failed.length).toBe(1);
+  expect(ports.core.errors.length).toBe(1);
+  expect(ports.localCache.cacheDirCalls.length).toBe(0);
+  expect(ports.environment.exitCalls).toContain(-1000);
 });

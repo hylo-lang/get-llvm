@@ -13,73 +13,77 @@ const baseInputs = {
 };
 
 test("cloud/local caches, all misses: download, then save to each enabled cache", async () => {
-  for (const m of [
+  for (const scenario of [
     { cloudCache: true, localCache: true },
     { cloudCache: true, localCache: false },
     { cloudCache: false, localCache: true },
     { cloudCache: false, localCache: false },
   ]) {
-    const fakes = new Fakes(); // fresh fakes per case: no mock resetting needed
-    fakes.core.inputs = {
+    const ports = new Fakes(); // fresh ports per case: no mock resetting needed
+    ports.core.inputs = {
       ...baseInputs,
-      useCloudCache: String(m.cloudCache),
-      useLocalCache: String(m.localCache),
+      useCloudCache: String(scenario.cloudCache),
+      useLocalCache: String(scenario.localCache),
     };
-    fakes.cloudCache.restoreResult = undefined; // cloud miss
-    fakes.localCache.findResult = null; // local miss
+    ports.cloudCache.restoreResult = undefined; // cloud miss
+    ports.localCache.findResult = null; // local miss
 
-    await main(fakes);
+    await main(ports);
 
-    expect(fakes.core.failed.length).toBe(0);
-    expect(fakes.core.errors.length).toBe(0);
-    expect(fakes.downloader.calls.length).toBe(1);
-    expect(fakes.localCache.findCalls.length).toBe(m.localCache ? 1 : 0);
-    expect(fakes.localCache.cacheDirCalls.length).toBe(m.localCache ? 1 : 0);
-    expect(fakes.cloudCache.restoreCalls.length).toBe(m.cloudCache ? 1 : 0);
-    expect(fakes.cloudCache.saveCalls.length).toBe(m.cloudCache ? 1 : 0);
+    expect(ports.core.failed.length).toBe(0);
+    expect(ports.core.errors.length).toBe(0);
+    expect(ports.downloader.calls.length).toBe(1);
+    expect(ports.localCache.findCalls.length).toBe(scenario.localCache ? 1 : 0);
+    expect(ports.localCache.cacheDirCalls.length).toBe(scenario.localCache ? 1 : 0);
+    expect(ports.cloudCache.restoreCalls.length).toBe(scenario.cloudCache ? 1 : 0);
+    expect(ports.cloudCache.saveCalls.length).toBe(scenario.cloudCache ? 1 : 0);
   }
 });
 
 test("cloud/local cache hits skip downloading and re-saving", async () => {
-  for (const m of [
+  for (const scenario of [
     { cloudCache: true, localCache: true, localHit: false, cloudHit: true },
     { cloudCache: false, localCache: true, localHit: false, cloudHit: false },
     { cloudCache: true, localCache: true, localHit: true, cloudHit: false },
     { cloudCache: false, localCache: true, localHit: true, cloudHit: false },
   ]) {
-    const fakes = new Fakes();
-    fakes.core.inputs = {
+    const ports = new Fakes();
+    ports.core.inputs = {
       ...baseInputs,
-      useCloudCache: String(m.cloudCache),
-      useLocalCache: String(m.localCache),
+      useCloudCache: String(scenario.cloudCache),
+      useLocalCache: String(scenario.localCache),
     };
-    fakes.localCache.findResult = m.localHit ? "local-hit-dir" : null;
-    fakes.cloudCache.restoreResult = m.cloudHit ? "cloud-hit-key" : undefined;
+    ports.localCache.findResult = scenario.localHit ? "local-hit-dir" : null;
+    ports.cloudCache.restoreResult = scenario.cloudHit ? "cloud-hit-key" : undefined;
 
-    await main(fakes);
+    await main(ports);
 
-    expect(fakes.core.failed.length).toBe(0);
-    expect(fakes.core.errors.length).toBe(0);
+    expect(ports.core.failed.length).toBe(0);
+    expect(ports.core.errors.length).toBe(0);
 
     // A hit in either cache means no download.
-    const downloaded = !m.localHit && !m.cloudHit;
-    expect(fakes.downloader.calls.length).toBe(downloaded ? 1 : 0);
+    const downloaded = !scenario.localHit && !scenario.cloudHit;
+    expect(ports.downloader.calls.length).toBe(downloaded ? 1 : 0);
 
-    expect(fakes.localCache.findCalls.length).toBe(m.localCache ? 1 : 0);
+    expect(ports.localCache.findCalls.length).toBe(scenario.localCache ? 1 : 0);
     // Save to the local tool cache only when it is enabled and there was a miss.
-    expect(fakes.localCache.cacheDirCalls.length).toBe(m.localCache && !m.localHit ? 1 : 0);
+    expect(ports.localCache.cacheDirCalls.length).toBe(
+      scenario.localCache && !scenario.localHit ? 1 : 0,
+    );
 
     // A local hit short-circuits before the cloud cache is consulted.
-    expect(fakes.cloudCache.restoreCalls.length).toBe(m.cloudCache && !m.localHit ? 1 : 0);
-    expect(fakes.cloudCache.saveCalls.length).toBe(
-      m.cloudCache && !m.localHit && !m.cloudHit ? 1 : 0,
+    expect(ports.cloudCache.restoreCalls.length).toBe(
+      scenario.cloudCache && !scenario.localHit ? 1 : 0,
+    );
+    expect(ports.cloudCache.saveCalls.length).toBe(
+      scenario.cloudCache && !scenario.localHit && !scenario.cloudHit ? 1 : 0,
     );
   }
 });
 
 test("local cache store then restore: download happens once", async () => {
-  const fakes = new Fakes(); // shared across iterations to accumulate download count
-  fakes.core.inputs = {
+  const ports = new Fakes(); // shared across iterations to accumulate download count
+  ports.core.inputs = {
     ...baseInputs,
     useCloudCache: "false",
     useLocalCache: "true",
@@ -88,15 +92,15 @@ test("local cache store then restore: download happens once", async () => {
   let expectedDownloads = 0;
   for (const localHit of [false, true]) {
     // Simulate the entry stored on the first (miss) iteration being found on the next.
-    fakes.localCache.findResult = localHit ? "local-hit-dir" : null;
+    ports.localCache.findResult = localHit ? "local-hit-dir" : null;
 
-    await main(fakes);
+    await main(ports);
 
-    expect(fakes.core.failed.length).toBe(0);
-    expect(fakes.cloudCache.restoreCalls.length).toBe(0);
-    expect(fakes.cloudCache.saveCalls.length).toBe(0);
+    expect(ports.core.failed.length).toBe(0);
+    expect(ports.cloudCache.restoreCalls.length).toBe(0);
+    expect(ports.cloudCache.saveCalls.length).toBe(0);
 
     expectedDownloads += localHit ? 0 : 1;
-    expect(fakes.downloader.calls.length).toBe(expectedDownloads);
+    expect(ports.downloader.calls.length).toBe(expectedDownloads);
   }
 });

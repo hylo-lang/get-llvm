@@ -6,9 +6,9 @@ import { ToolsGetter } from "../src/get-llvm";
 import { Fakes, options } from "./support/fakes";
 
 test("a missing RUNNER_TEMP directory rejects", async () => {
-  const fakes = new Fakes();
-  fakes.environment.runnerTempValue = undefined;
+  const ports = new Fakes();
+  ports.environment.runnerTempValue = undefined;
 
-  const getter = new ToolsGetter(options(), fakes);
+  const getter = new ToolsGetter(options(), ports);
   await expect(getter.run()).rejects.toThrowError();
 });
