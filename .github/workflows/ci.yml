@@ -10,7 +10,7 @@ jobs:
     name: Lint and format
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
@@ -27,7 +27,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2025, macos-15]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
@@ -43,7 +43,7 @@ jobs:
     name: Check dist/ is up-to-date
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
@@ -68,7 +68,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm, macos-15, macos-15-intel]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: get-llvm
         uses: ./
         with:
