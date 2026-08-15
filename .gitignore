@@ -13,3 +13,4 @@ build
 coverage
 .DS_Store
 .env
+.idea
